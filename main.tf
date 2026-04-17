@@ -463,7 +463,7 @@ resource "azurerm_virtual_hub_routing_intent" "main" {
   routing_policy {
     name         = "PrivateTrafficPolicy"
     destinations = ["PrivateTraffic"]
-    next_hop     = azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main.id
+    next_hop     = azurerm_palo_alto_virtual_network_appliance.main.id
   }
 }
 
@@ -489,7 +489,7 @@ resource "null_resource" "routing_intent_additional_prefixes" {
               {
                 "name": "PrivateTrafficPolicy",
                 "destinations": ["PrivateTraffic"],
-                "nextHop": "${azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main.id}",
+                "nextHop": "${azurerm_palo_alto_virtual_network_appliance.main.id}",
                 "additionalPrefixes": ["0.0.0.0/1", "128.0.0.0/1"]
               }
             ]
