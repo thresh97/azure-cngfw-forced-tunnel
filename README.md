@@ -71,7 +71,7 @@ terraform apply -var-file=terraform.tfvars
 | `vpn_shared_key` | S2S VPN shared key (both connections) |
 | `vng_bgp_asn` | Hub VNet VNG ASN (default: 65515) |
 | `vwan_bgp_asn` | vWAN Hub VPN GW ASN (default: 65516) |
-| `scm_tsg_id` | SCM Tenant Security Group ID |
+| `scm_tenant_name` | SCM tenant name (`strata_cloud_manager_tenant_name`) |
 | `allowed_mgmt_cidrs` | CIDRs for SSH validation to workload VMs |
 
 ---

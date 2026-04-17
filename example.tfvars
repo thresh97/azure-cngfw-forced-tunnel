@@ -11,8 +11,8 @@ vpn_shared_key     = "changeme-use-a-strong-key"
 vng_bgp_asn  = 65515
 vwan_bgp_asn = 65516
 
-# Strata Cloud Manager TSG ID
-scm_tsg_id = "your-tsg-id-here"
+# Strata Cloud Manager tenant name
+scm_tenant_name = "your-tenant-name-here"
 
 # CIDRs for direct SSH validation to workload VMs
 allowed_mgmt_cidrs = ["203.0.113.0/24"]

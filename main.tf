@@ -88,9 +88,9 @@ variable "vwan_bgp_asn" {
   description = "BGP ASN for the vWAN Hub VPN Gateway"
 }
 
-variable "scm_tsg_id" {
+variable "scm_tenant_name" {
   type        = string
-  description = "Strata Cloud Manager Tenant Security Group (TSG) ID"
+  description = "Strata Cloud Manager tenant name (strata_cloud_manager_tenant_name)"
 }
 
 variable "allowed_mgmt_cidrs" {
@@ -259,7 +259,7 @@ resource "azurerm_palo_alto_next_generation_firewall_virtual_network_strata_clou
   }
 
   panorama_configuration {
-    tsg_id = var.scm_tsg_id
+    strata_cloud_manager_tenant_name = var.scm_tenant_name
   }
 }
 
@@ -413,7 +413,7 @@ resource "azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_ma
   }
 
   panorama_configuration {
-    tsg_id = var.scm_tsg_id
+    strata_cloud_manager_tenant_name = var.scm_tenant_name
   }
 
   depends_on = [azurerm_vpn_gateway.main]
