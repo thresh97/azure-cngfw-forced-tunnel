@@ -5,17 +5,17 @@
 #   - Single external public IP peers via BGP and advertises 0.0.0.0/0
 #     to both the Hub VNet VNG and the vWAN Hub VPN Gateway (forced tunnel)
 #   - VNet CNGFW: deployed into hub VNet; workload VNet peered to hub;
-#     UDR on workload subnet steers 0/0 to CNGFW trusted IP
-#   - vWAN CNGFW: deployed into vWAN hub; workload VNet connected as spoke;
-#     private routing intent (0.0.0.0/1 + 128.0.0.0/1) steers E-W through CNGFW;
+#     UDR on workload subnet steers 0/0 to CNGFW trusted IP (.4)
+#   - vWAN CNGFW: deployed into vWAN hub via PAN NVA + CNGFW resource;
+#     private routing intent steers E-W through CNGFW;
 #     internet traffic forced via BGP-learned 0/0 through vWAN Hub VPN GW
-#   - SCM (Strata Cloud Manager) TSG manages both CNGFW deployments
+#   - Both CNGFW deployments managed by Strata Cloud Manager (SCM)
 #
 # IP Allocation (10.128.0.0/6):
 #   Hub VNet            10.128.0.0/16
 #     GatewaySubnet     10.128.0.0/27
-#     CNGFW Trusted     10.128.1.0/24  (delegated)
-#     CNGFW Untrusted   10.128.2.0/24  (delegated)
+#     CNGFW Trusted     10.128.1.0/24  (delegated to PAN)
+#     CNGFW Untrusted   10.128.2.0/24  (delegated to PAN)
 #     CNGFW Mgmt        10.128.3.0/24
 #   VNet Workload VNet  10.130.0.0/16
 #     Workload Subnet   10.130.0.0/24
@@ -25,6 +25,7 @@
 # =============================================================================
 
 terraform {
+  required_version = ">= 1.5, < 2.0"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -35,7 +36,11 @@ terraform {
 
 provider "azurerm" {
   subscription_id = var.subscription_id
-  features {}
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -126,7 +131,14 @@ resource "azurerm_subnet" "gateway" {
   address_prefixes     = ["10.128.0.0/27"]
 }
 
-# Trusted subnet — delegated to PAN NGFW
+# NSG for CNGFW subnets
+resource "azurerm_network_security_group" "cngfw" {
+  name                = "${var.prefix}-cngfw-nsg"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+}
+
+# Trusted subnet — delegated to PaloAltoNetworks.Cloudngfw/firewalls
 resource "azurerm_subnet" "cngfw_trusted" {
   name                 = "${var.prefix}-cngfw-trusted"
   resource_group_name  = azurerm_resource_group.main.name
@@ -134,14 +146,20 @@ resource "azurerm_subnet" "cngfw_trusted" {
   address_prefixes     = ["10.128.1.0/24"]
 
   delegation {
-    name = "pan-ngfw-delegation"
+    name = "pan-cloudngfw-delegation"
     service_delegation {
-      name = "PaloAltoNetworks.Ngfw/firewalls"
+      name    = "PaloAltoNetworks.Cloudngfw/firewalls"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
     }
   }
 }
 
-# Untrusted subnet — delegated to PAN NGFW
+resource "azurerm_subnet_network_security_group_association" "cngfw_trusted" {
+  subnet_id                 = azurerm_subnet.cngfw_trusted.id
+  network_security_group_id = azurerm_network_security_group.cngfw.id
+}
+
+# Untrusted subnet — delegated to PaloAltoNetworks.Cloudngfw/firewalls
 resource "azurerm_subnet" "cngfw_untrusted" {
   name                 = "${var.prefix}-cngfw-untrusted"
   resource_group_name  = azurerm_resource_group.main.name
@@ -149,14 +167,20 @@ resource "azurerm_subnet" "cngfw_untrusted" {
   address_prefixes     = ["10.128.2.0/24"]
 
   delegation {
-    name = "pan-ngfw-delegation"
+    name = "pan-cloudngfw-delegation"
     service_delegation {
-      name = "PaloAltoNetworks.Ngfw/firewalls"
+      name    = "PaloAltoNetworks.Cloudngfw/firewalls"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
     }
   }
 }
 
-# Management subnet (optional — for out-of-band access)
+resource "azurerm_subnet_network_security_group_association" "cngfw_untrusted" {
+  subnet_id                 = azurerm_subnet.cngfw_untrusted.id
+  network_security_group_id = azurerm_network_security_group.cngfw.id
+}
+
+# Management subnet (out-of-band / SSH validation)
 resource "azurerm_subnet" "cngfw_mgmt" {
   name                 = "${var.prefix}-cngfw-mgmt"
   resource_group_name  = azurerm_resource_group.main.name
@@ -199,7 +223,7 @@ resource "azurerm_virtual_network_gateway" "hub" {
 }
 
 # ---------------------------------------------------------------------------
-# Local Network Gateway — represents the external BGP peer (single public IP)
+# Local Network Gateway + VPN Connection — Hub VNet → external BGP peer
 # ---------------------------------------------------------------------------
 
 resource "azurerm_local_network_gateway" "bgp_peer" {
@@ -214,15 +238,10 @@ resource "azurerm_local_network_gateway" "bgp_peer" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# VPN Connection — Hub VNet VNG → external BGP peer (advertises 0/0)
-# ---------------------------------------------------------------------------
-
 resource "azurerm_virtual_network_gateway_connection" "hub_to_peer" {
   name                = "${var.prefix}-vng-to-bgp-peer"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-
   type                       = "IPsec"
   virtual_network_gateway_id = azurerm_virtual_network_gateway.hub.id
   local_network_gateway_id   = azurerm_local_network_gateway.bgp_peer.id
@@ -243,23 +262,19 @@ resource "azurerm_public_ip" "cngfw_vnet" {
 }
 
 resource "azurerm_palo_alto_next_generation_firewall_virtual_network_strata_cloud_manager" "main" {
-  name                = "${var.prefix}-cngfw-vnet"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
+  name                             = "${var.prefix}-cngfw-vnet"
+  resource_group_name              = azurerm_resource_group.main.name
+  location                         = azurerm_resource_group.main.location
+  strata_cloud_manager_tenant_name = var.scm_tenant_name
 
   network_profile {
     public_ip_address_ids = [azurerm_public_ip.cngfw_vnet.id]
 
     vnet_configuration {
-      virtual_network_id                  = azurerm_virtual_network.hub.id
-      trusted_subnet_id                   = azurerm_subnet.cngfw_trusted.id
-      untrusted_subnet_id                 = azurerm_subnet.cngfw_untrusted.id
-      ip_of_trust_for_user_defined_routes = "10.128.1.4"
+      virtual_network_id  = azurerm_virtual_network.hub.id
+      trusted_subnet_id   = azurerm_subnet.cngfw_trusted.id
+      untrusted_subnet_id = azurerm_subnet.cngfw_untrusted.id
     }
-  }
-
-  panorama_configuration {
-    strata_cloud_manager_tenant_name = var.scm_tenant_name
   }
 }
 
@@ -268,7 +283,7 @@ resource "azurerm_palo_alto_next_generation_firewall_virtual_network_strata_clou
 # ===========================================================================
 
 resource "azurerm_virtual_network" "workload_vnet" {
-  name                = "${var.prefix}-workload-vnet-vnet"
+  name                = "${var.prefix}-workload-vnet"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   address_space       = ["10.130.0.0/16"]
@@ -281,7 +296,6 @@ resource "azurerm_subnet" "workload_vnet" {
   address_prefixes     = ["10.130.0.0/24"]
 }
 
-# Peer workload VNet to hub VNet
 resource "azurerm_virtual_network_peering" "workload_to_hub" {
   name                      = "workload-to-hub"
   resource_group_name       = azurerm_resource_group.main.name
@@ -301,7 +315,7 @@ resource "azurerm_virtual_network_peering" "hub_to_workload" {
 }
 
 # ---------------------------------------------------------------------------
-# UDR — route workload traffic through VNet CNGFW
+# UDR — route workload traffic through VNet CNGFW trusted IP (.4)
 # ---------------------------------------------------------------------------
 
 resource "azurerm_route_table" "workload_vnet" {
@@ -366,7 +380,7 @@ resource "azurerm_vpn_gateway" "main" {
 }
 
 # ---------------------------------------------------------------------------
-# vWAN VPN Site — the external BGP peer (same single public IP)
+# vWAN VPN Site + Connection — external BGP peer (same single public IP)
 # ---------------------------------------------------------------------------
 
 resource "azurerm_vpn_site" "bgp_peer" {
@@ -399,21 +413,40 @@ resource "azurerm_vpn_gateway_connection" "bgp_peer" {
 }
 
 # ---------------------------------------------------------------------------
+# PAN NVA — required prerequisite for vWAN CNGFW
+# ---------------------------------------------------------------------------
+
+resource "azurerm_palo_alto_virtual_network_appliance" "main" {
+  name           = "${var.prefix}-pan-nva"
+  virtual_hub_id = azurerm_virtual_hub.main.id
+}
+
+# ---------------------------------------------------------------------------
+# vWAN CNGFW public IP
+# ---------------------------------------------------------------------------
+
+resource "azurerm_public_ip" "cngfw_vwan" {
+  name                = "${var.prefix}-cngfw-vwan-pip"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
+# ---------------------------------------------------------------------------
 # vWAN CNGFW — Strata Cloud Manager managed
 # ---------------------------------------------------------------------------
 
 resource "azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager" "main" {
-  name                = "${var.prefix}-cngfw-vhub"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  virtual_hub_id      = azurerm_virtual_hub.main.id
+  name                             = "${var.prefix}-cngfw-vhub"
+  resource_group_name              = azurerm_resource_group.main.name
+  location                         = azurerm_resource_group.main.location
+  strata_cloud_manager_tenant_name = var.scm_tenant_name
 
   network_profile {
-    public_ip_count = 1
-  }
-
-  panorama_configuration {
-    strata_cloud_manager_tenant_name = var.scm_tenant_name
+    public_ip_address_ids        = [azurerm_public_ip.cngfw_vwan.id]
+    virtual_hub_id               = azurerm_virtual_hub.main.id
+    network_virtual_appliance_id = azurerm_palo_alto_virtual_network_appliance.main.id
   }
 
   depends_on = [azurerm_vpn_gateway.main]
@@ -421,8 +454,7 @@ resource "azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_ma
 
 # ---------------------------------------------------------------------------
 # vWAN Routing Intent — private traffic only
-# 0.0.0.0/1 and 128.0.0.0/1 as additional prefixes complement default
-# private coverage; internet traffic is handled by BGP-learned 0/0 from VPN GW
+# Internet traffic handled by BGP-learned 0/0 from vWAN Hub VPN GW
 # ---------------------------------------------------------------------------
 
 resource "azurerm_virtual_hub_routing_intent" "main" {
@@ -434,21 +466,14 @@ resource "azurerm_virtual_hub_routing_intent" "main" {
     destinations = ["PrivateTraffic"]
     next_hop     = azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main.id
   }
-
-  depends_on = [azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main]
 }
-
-# NOTE: 0.0.0.0/1 and 128.0.0.0/1 additional prefixes for private routing
-# intent are configured in SCM/Panorama policy or via the CNGFW resource's
-# network_profile depending on provider version. Verify azurerm 4.69
-# azurerm_virtual_hub_routing_intent supports additional_prefixes if needed.
 
 # ===========================================================================
 # WORKLOAD VNET — vWAN path
 # ===========================================================================
 
 resource "azurerm_virtual_network" "workload_vwan" {
-  name                = "${var.prefix}-workload-vnet-vwan"
+  name                = "${var.prefix}-workload-vwan"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   address_space       = ["10.131.0.0/16"]
@@ -461,25 +486,19 @@ resource "azurerm_subnet" "workload_vwan" {
   address_prefixes     = ["10.131.0.0/24"]
 }
 
-# Connect workload VNet to vWAN hub
 resource "azurerm_virtual_hub_connection" "workload_vwan" {
   name                      = "${var.prefix}-workload-vwan-conn"
   virtual_hub_id            = azurerm_virtual_hub.main.id
   remote_virtual_network_id = azurerm_virtual_network.workload_vwan.id
 }
 
-# ---------------------------------------------------------------------------
-# UDR — workload VNet vWAN path
-# With routing intent active, vWAN pushes effective routes to spoke VNets.
-# A local UDR is still needed when bgp_route_propagation_enabled = false
-# or for overriding specific prefixes for direct SSH access.
-# ---------------------------------------------------------------------------
-
+# Route table for vWAN workload — BGP propagation enabled to receive
+# effective routes pushed by routing intent from the vWAN hub
 resource "azurerm_route_table" "workload_vwan" {
   name                          = "${var.prefix}-workload-vwan-rt"
   resource_group_name           = azurerm_resource_group.main.name
   location                      = azurerm_resource_group.main.location
-  bgp_route_propagation_enabled = true  # allow vWAN effective routes to propagate
+  bgp_route_propagation_enabled = true
 }
 
 resource "azurerm_subnet_route_table_association" "workload_vwan" {
@@ -492,7 +511,7 @@ resource "azurerm_subnet_route_table_association" "workload_vwan" {
 # ===========================================================================
 
 output "vng_public_ip" {
-  description = "Hub VNet VNG public IP — configure as S2S peer on external device"
+  description = "Hub VNet VNG public IP — configure S2S on external BGP device"
   value       = azurerm_public_ip.vng.ip_address
 }
 
@@ -501,9 +520,9 @@ output "cngfw_vnet_public_ip" {
   value       = azurerm_public_ip.cngfw_vnet.ip_address
 }
 
-output "cngfw_vnet_trusted_udr_ip" {
-  description = "VNet CNGFW trusted IP for UDR next-hop"
-  value       = "10.128.1.4"
+output "cngfw_vwan_public_ip" {
+  description = "vWAN CNGFW public IP"
+  value       = azurerm_public_ip.cngfw_vwan.ip_address
 }
 
 output "vwan_hub_id" {
@@ -512,11 +531,9 @@ output "vwan_hub_id" {
 }
 
 output "workload_vnet_subnet" {
-  description = "VNet path workload subnet"
-  value       = azurerm_subnet.workload_vnet.address_prefixes[0]
+  value = azurerm_subnet.workload_vnet.address_prefixes[0]
 }
 
 output "workload_vwan_subnet" {
-  description = "vWAN path workload subnet"
-  value       = azurerm_subnet.workload_vwan.address_prefixes[0]
+  value = azurerm_subnet.workload_vwan.address_prefixes[0]
 }
