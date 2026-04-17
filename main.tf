@@ -7,8 +7,7 @@
 #   - VNet CNGFW: deployed into hub VNet; workload VNet peered to hub;
 #     UDR on workload subnet steers 0/0 to CNGFW trusted IP (.4)
 #   - vWAN CNGFW: deployed into vWAN hub via PAN NVA + CNGFW resource;
-#     private routing intent steers E-W through CNGFW;
-#     internet traffic forced via BGP-learned 0/0 through vWAN Hub VPN GW
+#     routing intent configured via portal (not managed by TF)
 #   - Both CNGFW deployments managed by Strata Cloud Manager (SCM)
 #
 # IP Allocation (10.128.0.0/6):
@@ -96,6 +95,11 @@ variable "scm_tenant_name" {
 variable "allowed_mgmt_cidrs" {
   type        = list(string)
   description = "CIDRs allowed to SSH to workload VMs (for validation)"
+}
+
+variable "ssh_public_key" {
+  type        = string
+  description = "SSH public key content for workload VM admin access"
 }
 
 # ---------------------------------------------------------------------------
@@ -409,6 +413,14 @@ resource "azurerm_vpn_gateway_connection" "bgp_peer" {
     shared_key       = var.vpn_shared_key
     bgp_enabled      = true
   }
+
+  # When routing intent owns the hub, VPN connections must not carry their own
+  # routing configuration — Azure auto-populates it. The provider sends routing
+  # defaults even without an explicit block, which triggers
+  # ConnectionRoutingConfigConflictsWithRoutingIntent. Suppress that drift.
+  lifecycle {
+    ignore_changes = [routing]
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -451,55 +463,6 @@ resource "azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_ma
   depends_on = [azurerm_vpn_gateway.main]
 }
 
-# ---------------------------------------------------------------------------
-# vWAN Routing Intent — private traffic only
-# Internet traffic handled by BGP-learned 0/0 from vWAN Hub VPN GW
-# ---------------------------------------------------------------------------
-
-resource "azurerm_virtual_hub_routing_intent" "main" {
-  name           = "${var.prefix}-routing-intent"
-  virtual_hub_id = azurerm_virtual_hub.main.id
-
-  routing_policy {
-    name         = "PrivateTrafficPolicy"
-    destinations = ["PrivateTraffic"]
-    next_hop     = azurerm_palo_alto_virtual_network_appliance.main.id
-  }
-}
-
-# azurerm_virtual_hub_routing_intent does not expose additional_prefixes in
-# the routing_policy block (schema confirmed). Use AzCLI to patch 0.0.0.0/1
-# and 128.0.0.0/1 so the full address space routes through CNGFW alongside
-# the BGP-learned 0/0 forced tunnel.
-# AzCLI and Terraform do not expose additionalPrefixes on routing intent.
-# Use az rest to PUT directly to the REST API which does support the field.
-resource "null_resource" "routing_intent_additional_prefixes" {
-  triggers = {
-    routing_intent_id = azurerm_virtual_hub_routing_intent.main.id
-    cngfw_id          = azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main.id
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      az rest --method put \
-        --url "https://management.azure.com${azurerm_virtual_hub.main.id}/routingIntent/${var.prefix}-routing-intent?api-version=2024-05-01" \
-        --body '{
-          "properties": {
-            "routingPolicies": [
-              {
-                "name": "PrivateTrafficPolicy",
-                "destinations": ["PrivateTraffic"],
-                "nextHop": "${azurerm_palo_alto_virtual_network_appliance.main.id}",
-                "additionalPrefixes": ["0.0.0.0/1", "128.0.0.0/1"]
-              }
-            ]
-          }
-        }'
-    EOT
-  }
-
-  depends_on = [azurerm_virtual_hub_routing_intent.main]
-}
 
 # ===========================================================================
 # WORKLOAD VNET — vWAN path
@@ -540,6 +503,142 @@ resource "azurerm_subnet_route_table_association" "workload_vwan" {
 }
 
 # ===========================================================================
+# WORKLOAD VMs
+# ===========================================================================
+
+resource "azurerm_network_security_group" "workload" {
+  name                = "${var.prefix}-workload-nsg"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+
+  security_rule {
+    name                       = "allow-ssh"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefixes    = var.allowed_mgmt_cidrs
+    destination_address_prefix = "*"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# VNet CNGFW path — workload VM
+# ---------------------------------------------------------------------------
+
+resource "azurerm_public_ip" "workload_vnet" {
+  name                = "${var.prefix}-workload-vnet-pip"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
+resource "azurerm_network_interface" "workload_vnet" {
+  name                = "${var.prefix}-workload-vnet-nic"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+
+  ip_configuration {
+    name                          = "ipconfig"
+    subnet_id                     = azurerm_subnet.workload_vnet.id
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.130.0.4"
+    public_ip_address_id          = azurerm_public_ip.workload_vnet.id
+  }
+}
+
+resource "azurerm_network_interface_security_group_association" "workload_vnet" {
+  network_interface_id      = azurerm_network_interface.workload_vnet.id
+  network_security_group_id = azurerm_network_security_group.workload.id
+}
+
+resource "azurerm_linux_virtual_machine" "workload_vnet" {
+  name                  = "${var.prefix}-workload-vnet-vm"
+  resource_group_name   = azurerm_resource_group.main.name
+  location              = azurerm_resource_group.main.location
+  size                  = "Standard_B1s"
+  admin_username        = "azureuser"
+  network_interface_ids = [azurerm_network_interface.workload_vnet.id]
+
+  admin_ssh_key {
+    username   = "azureuser"
+    public_key = var.ssh_public_key
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+}
+
+# ---------------------------------------------------------------------------
+# vWAN CNGFW path — workload VM
+# ---------------------------------------------------------------------------
+
+resource "azurerm_public_ip" "workload_vwan" {
+  name                = "${var.prefix}-workload-vwan-pip"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
+resource "azurerm_network_interface" "workload_vwan" {
+  name                = "${var.prefix}-workload-vwan-nic"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+
+  ip_configuration {
+    name                          = "ipconfig"
+    subnet_id                     = azurerm_subnet.workload_vwan.id
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.131.0.4"
+    public_ip_address_id          = azurerm_public_ip.workload_vwan.id
+  }
+}
+
+resource "azurerm_network_interface_security_group_association" "workload_vwan" {
+  network_interface_id      = azurerm_network_interface.workload_vwan.id
+  network_security_group_id = azurerm_network_security_group.workload.id
+}
+
+resource "azurerm_linux_virtual_machine" "workload_vwan" {
+  name                  = "${var.prefix}-workload-vwan-vm"
+  resource_group_name   = azurerm_resource_group.main.name
+  location              = azurerm_resource_group.main.location
+  size                  = "Standard_B1s"
+  admin_username        = "azureuser"
+  network_interface_ids = [azurerm_network_interface.workload_vwan.id]
+
+  admin_ssh_key {
+    username   = "azureuser"
+    public_key = var.ssh_public_key
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+}
+
+# ===========================================================================
 # Outputs
 # ===========================================================================
 
@@ -569,4 +668,14 @@ output "workload_vnet_subnet" {
 
 output "workload_vwan_subnet" {
   value = azurerm_subnet.workload_vwan.address_prefixes[0]
+}
+
+output "workload_vnet_vm_public_ip" {
+  description = "VNet CNGFW path workload VM public IP"
+  value       = azurerm_public_ip.workload_vnet.ip_address
+}
+
+output "workload_vwan_vm_public_ip" {
+  description = "vWAN CNGFW path workload VM public IP"
+  value       = azurerm_public_ip.workload_vwan.ip_address
 }

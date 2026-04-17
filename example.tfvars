@@ -16,3 +16,6 @@ scm_tenant_name = "your-tenant-name-here"
 
 # CIDRs for direct SSH validation to workload VMs
 allowed_mgmt_cidrs = ["203.0.113.0/24"]
+
+# SSH public key for workload VM access (azureuser)
+ssh_public_key = "ssh-rsa AAAA... user@host"
