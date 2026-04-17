@@ -8,8 +8,8 @@ bgp_peer_asn       = 65001
 vpn_shared_key     = "changeme-use-a-strong-key"
 
 # Azure VNG and vWAN Hub VPN GW BGP ASNs
-vng_bgp_asn  = 65515
-vwan_bgp_asn = 65516
+vng_bgp_asn = 65515
+# vwan VPN GW ASN is fixed at 65515 (custom ASN requires Support enablement)
 
 # Strata Cloud Manager tenant name
 scm_tenant_name = "your-tenant-name-here"

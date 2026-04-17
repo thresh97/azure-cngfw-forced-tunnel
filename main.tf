@@ -87,11 +87,6 @@ variable "vng_bgp_asn" {
   description = "BGP ASN for the Hub VNet VNG"
 }
 
-variable "vwan_bgp_asn" {
-  type        = number
-  default     = 65516
-  description = "BGP ASN for the vWAN Hub VPN Gateway"
-}
 
 variable "scm_tenant_name" {
   type        = string
@@ -206,7 +201,7 @@ resource "azurerm_virtual_network_gateway" "hub" {
   location            = azurerm_resource_group.main.location
   type                = "Vpn"
   vpn_type            = "RouteBased"
-  sku                 = "VpnGw2"
+  sku                 = "VpnGw2AZ"
   bgp_enabled         = true
   active_active       = false
 
@@ -303,6 +298,8 @@ resource "azurerm_virtual_network_peering" "workload_to_hub" {
   remote_virtual_network_id = azurerm_virtual_network.hub.id
   use_remote_gateways       = true
   allow_forwarded_traffic   = true
+
+  depends_on = [azurerm_virtual_network_gateway.hub]
 }
 
 resource "azurerm_virtual_network_peering" "hub_to_workload" {
@@ -367,8 +364,8 @@ resource "azurerm_vpn_gateway" "main" {
   location            = azurerm_resource_group.main.location
   virtual_hub_id      = azurerm_virtual_hub.main.id
 
+  # Custom ASN requires Support enablement — omit to use default (65515)
   bgp_settings {
-    asn         = var.vwan_bgp_asn
     peer_weight = 0
     instance_0_bgp_peering_address {
       custom_ips = []
