@@ -466,6 +466,29 @@ resource "azurerm_virtual_hub_routing_intent" "main" {
   }
 }
 
+# azurerm_virtual_hub_routing_intent does not expose additional_prefixes in
+# the routing_policy block (schema confirmed). Use AzCLI to patch 0.0.0.0/1
+# and 128.0.0.0/1 so the full address space routes through CNGFW alongside
+# the BGP-learned 0/0 forced tunnel.
+resource "null_resource" "routing_intent_additional_prefixes" {
+  triggers = {
+    routing_intent_id = azurerm_virtual_hub_routing_intent.main.id
+    cngfw_id          = azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      az network vhub routing-intent update \
+        --name ${var.prefix}-routing-intent \
+        --resource-group ${azurerm_resource_group.main.name} \
+        --vhub-name ${azurerm_virtual_hub.main.name} \
+        --routing-policies '[{"name":"PrivateTrafficPolicy","destinations":["PrivateTraffic"],"nextHop":"${azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main.id}","additionalPrefixes":["0.0.0.0/1","128.0.0.0/1"]}]'
+    EOT
+  }
+
+  depends_on = [azurerm_virtual_hub_routing_intent.main]
+}
+
 # ===========================================================================
 # WORKLOAD VNET — vWAN path
 # ===========================================================================
