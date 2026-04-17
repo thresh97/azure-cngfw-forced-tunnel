@@ -364,8 +364,9 @@ resource "azurerm_vpn_gateway" "main" {
   location            = azurerm_resource_group.main.location
   virtual_hub_id      = azurerm_virtual_hub.main.id
 
-  # Custom ASN requires Support enablement — omit to use default (65515)
+  # Custom ASN requires Support enablement — must use 65515
   bgp_settings {
+    asn         = 65515
     peer_weight = 0
     instance_0_bgp_peering_address {
       custom_ips = []
