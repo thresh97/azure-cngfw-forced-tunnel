@@ -207,7 +207,7 @@ resource "azurerm_virtual_network_gateway" "hub" {
   type                = "Vpn"
   vpn_type            = "RouteBased"
   sku                 = "VpnGw2"
-  enable_bgp          = true
+  bgp_enabled         = true
   active_active       = false
 
   ip_configuration {
