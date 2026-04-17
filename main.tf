@@ -246,7 +246,7 @@ resource "azurerm_virtual_network_gateway_connection" "hub_to_peer" {
   virtual_network_gateway_id = azurerm_virtual_network_gateway.hub.id
   local_network_gateway_id   = azurerm_local_network_gateway.bgp_peer.id
   shared_key                 = var.vpn_shared_key
-  enable_bgp                 = true
+  bgp_enabled                = true
 }
 
 # ---------------------------------------------------------------------------
