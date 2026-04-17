@@ -471,6 +471,8 @@ resource "azurerm_virtual_hub_routing_intent" "main" {
 # the routing_policy block (schema confirmed). Use AzCLI to patch 0.0.0.0/1
 # and 128.0.0.0/1 so the full address space routes through CNGFW alongside
 # the BGP-learned 0/0 forced tunnel.
+# AzCLI and Terraform do not expose additionalPrefixes on routing intent.
+# Use az rest to PUT directly to the REST API which does support the field.
 resource "null_resource" "routing_intent_additional_prefixes" {
   triggers = {
     routing_intent_id = azurerm_virtual_hub_routing_intent.main.id
@@ -479,11 +481,20 @@ resource "null_resource" "routing_intent_additional_prefixes" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      az network vhub routing-intent update \
-        --name ${var.prefix}-routing-intent \
-        --resource-group ${azurerm_resource_group.main.name} \
-        --vhub-name ${azurerm_virtual_hub.main.name} \
-        --routing-policies '[{"name":"PrivateTrafficPolicy","destinations":["PrivateTraffic"],"nextHop":"${azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main.id}","additionalPrefixes":["0.0.0.0/1","128.0.0.0/1"]}]'
+      az rest --method put \
+        --url "https://management.azure.com${azurerm_virtual_hub.main.id}/routingIntent/${var.prefix}-routing-intent?api-version=2024-05-01" \
+        --body '{
+          "properties": {
+            "routingPolicies": [
+              {
+                "name": "PrivateTrafficPolicy",
+                "destinations": ["PrivateTraffic"],
+                "nextHop": "${azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager.main.id}",
+                "additionalPrefixes": ["0.0.0.0/1", "128.0.0.0/1"]
+              }
+            ]
+          }
+        }'
     EOT
   }
 
