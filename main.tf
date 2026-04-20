@@ -171,11 +171,15 @@ variable "panos_tunnel_vwan1" {
 locals {
   vwan_inst0_public_ip = [
     for ip in tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].tunnel_ips) : ip
-    if !cidrcontains("10.0.0.0/8", ip) && !cidrcontains("172.16.0.0/12", ip) && !cidrcontains("192.168.0.0/16", ip)
+    if !startswith(ip, "10.") &&
+       !startswith(ip, "192.168.") &&
+       !(startswith(ip, "172.") && tonumber(split(".", ip)[1]) >= 16 && tonumber(split(".", ip)[1]) <= 31)
   ][0]
   vwan_inst1_public_ip = [
     for ip in tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].tunnel_ips) : ip
-    if !cidrcontains("10.0.0.0/8", ip) && !cidrcontains("172.16.0.0/12", ip) && !cidrcontains("192.168.0.0/16", ip)
+    if !startswith(ip, "10.") &&
+       !startswith(ip, "192.168.") &&
+       !(startswith(ip, "172.") && tonumber(split(".", ip)[1]) >= 16 && tonumber(split(".", ip)[1]) <= 31)
   ][0]
 }
 
