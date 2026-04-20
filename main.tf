@@ -164,6 +164,12 @@ variable "panos_tunnel_vwan1" {
   description = "PAN-OS tunnel interface for vWAN VPN GW instance 1"
 }
 
+variable "panos_tunnel_zone" {
+  type        = string
+  default     = "vpn-zone"
+  description = "PAN-OS security zone to assign all three tunnel interfaces"
+}
+
 # ---------------------------------------------------------------------------
 # Locals — filter vWAN VPN GW tunnel_ips to public only (sets include private)
 # ---------------------------------------------------------------------------
@@ -846,7 +852,7 @@ output "panos_vpn_set_commands" {
 
     # --- IKE crypto profile ---
     set network ike crypto-profiles ike-crypto-profiles azure-ike dh-group group14
-    set network ike crypto-profiles ike-crypto-profiles azure-ike authentication sha256
+    set network ike crypto-profiles ike-crypto-profiles azure-ike hash sha256
     set network ike crypto-profiles ike-crypto-profiles azure-ike encryption aes-256-cbc
     set network ike crypto-profiles ike-crypto-profiles azure-ike lifetime hours 8
 
@@ -863,6 +869,11 @@ output "panos_vpn_set_commands" {
     set network interface tunnel units ${var.panos_tunnel_vnet}
     set network interface tunnel units ${var.panos_tunnel_vwan0}
     set network interface tunnel units ${var.panos_tunnel_vwan1}
+
+    # --- Security zone ---
+    set zone ${var.panos_tunnel_zone} network layer3 ${var.panos_tunnel_vnet}
+    set zone ${var.panos_tunnel_zone} network layer3 ${var.panos_tunnel_vwan0}
+    set zone ${var.panos_tunnel_zone} network layer3 ${var.panos_tunnel_vwan1}
 
     # --- IKE gateways ---
     set network ike gateway azure-vnet-vng authentication pre-shared-key key ${nonsensitive(var.vpn_shared_key)}

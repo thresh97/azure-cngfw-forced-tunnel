@@ -40,6 +40,7 @@ ssh_public_key = "ssh-rsa AAAA... user@host"
 # panos_tunnel_vnet:   tunnel interface → VNet VNG
 # panos_tunnel_vwan0:  tunnel interface → vWAN VPN GW instance 0
 # panos_tunnel_vwan1:  tunnel interface → vWAN VPN GW instance 1
+# panos_tunnel_zone:   security zone assigned to all three tunnel interfaces
 generate_panos_config = false
 panos_router_type    = "virtual-router"
 panos_vr             = "default"
@@ -48,3 +49,4 @@ panos_loopback_iface = "loopback.1"
 panos_tunnel_vnet    = "tunnel.10"
 panos_tunnel_vwan0   = "tunnel.11"
 panos_tunnel_vwan1   = "tunnel.12"
+panos_tunnel_zone    = "vpn-zone"
