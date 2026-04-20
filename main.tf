@@ -108,6 +108,63 @@ variable "ssh_public_key" {
 }
 
 # ---------------------------------------------------------------------------
+# PAN-OS VPN config generation (optional)
+# ---------------------------------------------------------------------------
+
+variable "generate_panos_config" {
+  type        = bool
+  default     = false
+  description = "Render panos_vpn_set_commands output with PAN-OS set CLI for all three VPN tunnels"
+}
+
+variable "panos_vr" {
+  type        = string
+  default     = "default"
+  description = "PAN-OS virtual router name"
+}
+
+variable "panos_outside_iface" {
+  type        = string
+  default     = "ethernet1/1"
+  description = "PAN-OS outside/untrust ethernet interface (IKE local-address)"
+}
+
+variable "panos_loopback_iface" {
+  type        = string
+  default     = "loopback.1"
+  description = "PAN-OS loopback interface used as BGP source and router-id (IP = remote_peer_private_bgp_ip)"
+}
+
+variable "panos_router_type" {
+  type        = string
+  default     = "virtual-router"
+  description = "PAN-OS router type: virtual-router or logical-router"
+
+  validation {
+    condition     = contains(["virtual-router", "logical-router"], var.panos_router_type)
+    error_message = "Must be virtual-router or logical-router."
+  }
+}
+
+variable "panos_tunnel_vnet" {
+  type        = string
+  default     = "tunnel.10"
+  description = "PAN-OS tunnel interface for VNet VNG"
+}
+
+variable "panos_tunnel_vwan0" {
+  type        = string
+  default     = "tunnel.11"
+  description = "PAN-OS tunnel interface for vWAN VPN GW instance 0"
+}
+
+variable "panos_tunnel_vwan1" {
+  type        = string
+  default     = "tunnel.12"
+  description = "PAN-OS tunnel interface for vWAN VPN GW instance 1"
+}
+
+# ---------------------------------------------------------------------------
 # Resource Group
 # ---------------------------------------------------------------------------
 
@@ -751,4 +808,109 @@ output "workload_vnet_vm_public_ip" {
 output "workload_vwan_vm_public_ip" {
   description = "vWAN CNGFW path workload VM public IP (azureuser, 10.131.0.4)"
   value       = azurerm_public_ip.workload_vwan.ip_address
+}
+
+# ---------------------------------------------------------------------------
+# Optional PAN-OS set command macro
+# Set generate_panos_config = true to populate
+# ---------------------------------------------------------------------------
+
+output "panos_vpn_set_commands" {
+  description = "PAN-OS configure-mode set commands for BGP-over-IPsec to Azure VNet VNG and vWAN VPN GW (3 tunnels). Sensitive — use: terraform output -raw panos_vpn_set_commands"
+  value = !var.generate_panos_config ? null : <<-EOT
+
+    # ==========================================================
+    # PAN-OS VPN — Azure forced tunnel
+    # VNet VNG (1 tunnel) + vWAN VPN GW instance 0/1 (2 tunnels)
+    # Paste in configure mode, then commit
+    # ==========================================================
+
+    # --- IKE crypto profile ---
+    set network ike crypto-profiles ike-crypto-profiles azure-ike dh-group group14
+    set network ike crypto-profiles ike-crypto-profiles azure-ike authentication sha256
+    set network ike crypto-profiles ike-crypto-profiles azure-ike encryption aes-256-cbc
+    set network ike crypto-profiles ike-crypto-profiles azure-ike lifetime hours 8
+
+    # --- IPsec crypto profile ---
+    set network ike crypto-profiles ipsec-crypto-profiles azure-ipsec esp authentication sha256
+    set network ike crypto-profiles ipsec-crypto-profiles azure-ipsec esp encryption aes-256-cbc
+    set network ike crypto-profiles ipsec-crypto-profiles azure-ipsec dh-group group14
+    set network ike crypto-profiles ipsec-crypto-profiles azure-ipsec lifetime hours 1
+
+    # --- Loopback (BGP source / router-id = remote_peer_private_bgp_ip) ---
+    set network interface loopback units ${var.panos_loopback_iface} ip ${var.remote_peer_private_bgp_ip}/32
+
+    # --- Tunnel interfaces ---
+    set network interface tunnel units ${var.panos_tunnel_vnet}
+    set network interface tunnel units ${var.panos_tunnel_vwan0}
+    set network interface tunnel units ${var.panos_tunnel_vwan1}
+
+    # --- IKE gateways ---
+    set network ike gateway azure-vnet-vng authentication pre-shared-key key ${var.vpn_shared_key}
+    set network ike gateway azure-vnet-vng protocol version ikev2
+    set network ike gateway azure-vnet-vng protocol ikev2 ike-crypto-profile azure-ike
+    set network ike gateway azure-vnet-vng protocol ikev2 dpd enable yes
+    set network ike gateway azure-vnet-vng local-address interface ${var.panos_outside_iface}
+    set network ike gateway azure-vnet-vng peer-address ip ${azurerm_public_ip.vng.ip_address}
+
+    set network ike gateway azure-vwan-inst0 authentication pre-shared-key key ${var.vpn_shared_key}
+    set network ike gateway azure-vwan-inst0 protocol version ikev2
+    set network ike gateway azure-vwan-inst0 protocol ikev2 ike-crypto-profile azure-ike
+    set network ike gateway azure-vwan-inst0 protocol ikev2 dpd enable yes
+    set network ike gateway azure-vwan-inst0 local-address interface ${var.panos_outside_iface}
+    set network ike gateway azure-vwan-inst0 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].tunnel_ips)[0]}
+
+    set network ike gateway azure-vwan-inst1 authentication pre-shared-key key ${var.vpn_shared_key}
+    set network ike gateway azure-vwan-inst1 protocol version ikev2
+    set network ike gateway azure-vwan-inst1 protocol ikev2 ike-crypto-profile azure-ike
+    set network ike gateway azure-vwan-inst1 protocol ikev2 dpd enable yes
+    set network ike gateway azure-vwan-inst1 local-address interface ${var.panos_outside_iface}
+    set network ike gateway azure-vwan-inst1 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].tunnel_ips)[0]}
+
+    # --- IPsec tunnels ---
+    set network tunnel ipsec azure-vnet-vng auto-key ike-gateway azure-vnet-vng
+    set network tunnel ipsec azure-vnet-vng auto-key ipsec-crypto-profile azure-ipsec
+    set network tunnel ipsec azure-vnet-vng tunnel-interface ${var.panos_tunnel_vnet}
+
+    set network tunnel ipsec azure-vwan-inst0 auto-key ike-gateway azure-vwan-inst0
+    set network tunnel ipsec azure-vwan-inst0 auto-key ipsec-crypto-profile azure-ipsec
+    set network tunnel ipsec azure-vwan-inst0 tunnel-interface ${var.panos_tunnel_vwan0}
+
+    set network tunnel ipsec azure-vwan-inst1 auto-key ike-gateway azure-vwan-inst1
+    set network tunnel ipsec azure-vwan-inst1 auto-key ipsec-crypto-profile azure-ipsec
+    set network tunnel ipsec azure-vwan-inst1 tunnel-interface ${var.panos_tunnel_vwan1}
+
+    # --- Virtual router ---
+    set network ${var.panos_router_type} ${var.panos_vr} interface ${var.panos_loopback_iface}
+    set network ${var.panos_router_type} ${var.panos_vr} interface ${var.panos_tunnel_vnet}
+    set network ${var.panos_router_type} ${var.panos_vr} interface ${var.panos_tunnel_vwan0}
+    set network ${var.panos_router_type} ${var.panos_vr} interface ${var.panos_tunnel_vwan1}
+
+    # --- BGP ---
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp enable yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp router-id ${var.remote_peer_private_bgp_ip}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp local-as ${var.remote_peer_asn}
+
+    # VNet VNG peer
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet type ebgp
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng peer-as ${var.vng_bgp_asn}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng local-address ip ${var.remote_peer_private_bgp_ip}/32
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng local-address interface ${var.panos_loopback_iface}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng peer-address ip ${tolist(azurerm_virtual_network_gateway.hub.bgp_settings[0].peering_addresses[0].default_addresses)[0]}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options hold-time 30
+
+    # vWAN peers
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan type ebgp
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 peer-as 65515
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 local-address ip ${var.remote_peer_private_bgp_ip}/32
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 local-address interface ${var.panos_loopback_iface}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].default_ips)[0]}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options hold-time 30
+
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peer-as 65515
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 local-address ip ${var.remote_peer_private_bgp_ip}/32
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 local-address interface ${var.panos_loopback_iface}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips)[0]}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options hold-time 30
+  EOT
 }
