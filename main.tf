@@ -287,6 +287,31 @@ resource "azurerm_subnet" "cngfw_mgmt" {
 }
 
 # ---------------------------------------------------------------------------
+# GatewaySubnet route table — return traffic symmetry
+# Routes peered workload VNet space back through CNGFW trusted IP so that
+# traffic arriving from VNG returns via CNGFW rather than directly via peering
+# ---------------------------------------------------------------------------
+
+resource "azurerm_route_table" "gateway" {
+  name                          = "${var.prefix}-gateway-rt"
+  resource_group_name           = azurerm_resource_group.main.name
+  location                      = azurerm_resource_group.main.location
+  bgp_route_propagation_enabled = true
+
+  route {
+    name                   = "workload-vnet-to-cngfw"
+    address_prefix         = azurerm_virtual_network.workload_vnet.address_space[0]
+    next_hop_type          = "VirtualAppliance"
+    next_hop_in_ip_address = "10.128.1.4"
+  }
+}
+
+resource "azurerm_subnet_route_table_association" "gateway" {
+  subnet_id      = azurerm_subnet.gateway.id
+  route_table_id = azurerm_route_table.gateway.id
+}
+
+# ---------------------------------------------------------------------------
 # Virtual Network Gateway — BGP, route-based, forced tunnel endpoint
 # ---------------------------------------------------------------------------
 
