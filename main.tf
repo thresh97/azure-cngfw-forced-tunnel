@@ -863,9 +863,9 @@ output "panos_vpn_set_commands" {
     # ==========================================================
 
     # --- IKE crypto profile ---
-    set network ike crypto-profiles ike-crypto-profiles azure-ike dh-group group14
-    set network ike crypto-profiles ike-crypto-profiles azure-ike hash sha256
-    set network ike crypto-profiles ike-crypto-profiles azure-ike encryption aes-256-cbc
+    set network ike crypto-profiles ike-crypto-profiles azure-ike dh-group [ group14 group2 ]
+    set network ike crypto-profiles ike-crypto-profiles azure-ike hash [ sha256 sha1 ]
+    set network ike crypto-profiles ike-crypto-profiles azure-ike encryption [ aes-256-cbc aes-128-cbc ]
     set network ike crypto-profiles ike-crypto-profiles azure-ike lifetime hours 8
 
     # --- IPsec crypto profile ---
@@ -966,6 +966,17 @@ output "panos_vpn_set_commands" {
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 local-address interface ${var.panos_loopback_iface}
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips)[0]}
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options hold-time 30
+
+    # --- BGP default route redistribution ---
+    set network ${var.panos_router_type} ${var.panos_vr} protocol redist-profile default filter type static
+    set network ${var.panos_router_type} ${var.panos_vr} protocol redist-profile default filter destination 0.0.0.0/0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol redist-profile default priority 1
+    set network ${var.panos_router_type} ${var.panos_vr} protocol redist-profile default action redist
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp redist-rules default address-family-identifier ipv4
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp redist-rules default enable yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp redist-rules default set-origin incomplete
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp allow-redist-default-route yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp reject-default-route no
 
     # --- Security policies ---
     # Loopback → tunnel: BGP + ping (outbound BGP sessions from loopback to Azure peers)
