@@ -660,10 +660,69 @@ resource "azurerm_linux_virtual_machine" "workload_vwan" {
 # Outputs
 # ===========================================================================
 
-output "vng_public_ip" {
-  description = "Hub VNet VNG public IP — configure S2S on external BGP device"
+# ---------------------------------------------------------------------------
+# VNet VNG — S2S VPN configuration
+# ---------------------------------------------------------------------------
+
+output "vnet_vng_public_ip" {
+  description = "VNet VNG public IP (IKE endpoint)"
   value       = azurerm_public_ip.vng.ip_address
 }
+
+output "vnet_vng_bgp_asn" {
+  description = "VNet VNG BGP ASN"
+  value       = azurerm_virtual_network_gateway.hub.bgp_settings[0].asn
+}
+
+output "vnet_vng_bgp_peering_address" {
+  description = "VNet VNG BGP peering address (neighbor IP to configure on external peer)"
+  value       = tolist(azurerm_virtual_network_gateway.hub.bgp_settings[0].peering_addresses[0].default_addresses)[0]
+}
+
+output "vnet_vng_shared_key" {
+  description = "VNet VNG S2S shared key"
+  value       = var.vpn_shared_key
+  sensitive   = true
+}
+
+# ---------------------------------------------------------------------------
+# vWAN Hub VPN Gateway — S2S VPN configuration (active-active, two instances)
+# ---------------------------------------------------------------------------
+
+output "vwan_vpngw_bgp_asn" {
+  description = "vWAN Hub VPN GW BGP ASN (fixed 65515)"
+  value       = azurerm_vpn_gateway.main.bgp_settings[0].asn
+}
+
+output "vwan_vpngw_instance0_public_ips" {
+  description = "vWAN VPN GW instance 0 public IPs (IKE endpoints)"
+  value       = azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].tunnel_ips
+}
+
+output "vwan_vpngw_instance0_bgp_ips" {
+  description = "vWAN VPN GW instance 0 BGP peering IPs"
+  value       = azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].default_ips
+}
+
+output "vwan_vpngw_instance1_public_ips" {
+  description = "vWAN VPN GW instance 1 public IPs (IKE endpoints)"
+  value       = azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].tunnel_ips
+}
+
+output "vwan_vpngw_instance1_bgp_ips" {
+  description = "vWAN VPN GW instance 1 BGP peering IPs"
+  value       = azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips
+}
+
+output "vwan_vpngw_shared_key" {
+  description = "vWAN Hub VPN GW S2S shared key"
+  value       = var.vpn_shared_key
+  sensitive   = true
+}
+
+# ---------------------------------------------------------------------------
+# CNGFW public IPs
+# ---------------------------------------------------------------------------
 
 output "cngfw_vnet_public_ip" {
   description = "VNet CNGFW public IP"
@@ -675,25 +734,16 @@ output "cngfw_vwan_public_ip" {
   value       = azurerm_public_ip.cngfw_vwan.ip_address
 }
 
-output "vwan_hub_id" {
-  description = "vWAN Hub resource ID"
-  value       = azurerm_virtual_hub.main.id
-}
-
-output "workload_vnet_subnet" {
-  value = azurerm_subnet.workload_vnet.address_prefixes[0]
-}
-
-output "workload_vwan_subnet" {
-  value = azurerm_subnet.workload_vwan.address_prefixes[0]
-}
+# ---------------------------------------------------------------------------
+# Workload VMs
+# ---------------------------------------------------------------------------
 
 output "workload_vnet_vm_public_ip" {
-  description = "VNet CNGFW path workload VM public IP"
+  description = "VNet CNGFW path workload VM public IP (azureuser, 10.130.0.4)"
   value       = azurerm_public_ip.workload_vnet.ip_address
 }
 
 output "workload_vwan_vm_public_ip" {
-  description = "vWAN CNGFW path workload VM public IP"
+  description = "vWAN CNGFW path workload VM public IP (azureuser, 10.131.0.4)"
   value       = azurerm_public_ip.workload_vwan.ip_address
 }
