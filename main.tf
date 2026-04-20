@@ -916,6 +916,11 @@ output "panos_vpn_set_commands" {
     set network ${var.panos_router_type} ${var.panos_vr} interface ${var.panos_tunnel_vwan0}
     set network ${var.panos_router_type} ${var.panos_vr} interface ${var.panos_tunnel_vwan1}
 
+    # --- Static routes — BGP peer IPs via tunnel interfaces ---
+    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vnet-vng-bgp destination ${tolist(azurerm_virtual_network_gateway.hub.bgp_settings[0].peering_addresses[0].default_addresses)[0]}/32 interface ${var.panos_tunnel_vnet}
+    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vwan-inst0-bgp destination ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].default_ips)[0]}/32 interface ${var.panos_tunnel_vwan0}
+    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vwan-inst1-bgp destination ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips)[0]}/32 interface ${var.panos_tunnel_vwan1}
+
     # --- BGP ---
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp enable yes
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp router-id ${var.remote_peer_private_bgp_ip}
