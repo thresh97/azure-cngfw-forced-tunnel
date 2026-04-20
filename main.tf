@@ -332,6 +332,15 @@ resource "azurerm_route_table" "workload_vnet" {
     next_hop_type          = "VirtualAppliance"
     next_hop_in_ip_address = "10.128.1.4"
   }
+
+  dynamic "route" {
+    for_each = var.allowed_mgmt_cidrs
+    content {
+      name           = "mgmt-backdoor-${replace(route.value, "/", "-")}"
+      address_prefix = route.value
+      next_hop_type  = "Internet"
+    }
+  }
 }
 
 resource "azurerm_subnet_route_table_association" "workload_vnet" {
@@ -495,6 +504,15 @@ resource "azurerm_route_table" "workload_vwan" {
   resource_group_name           = azurerm_resource_group.main.name
   location                      = azurerm_resource_group.main.location
   bgp_route_propagation_enabled = true
+
+  dynamic "route" {
+    for_each = var.allowed_mgmt_cidrs
+    content {
+      name           = "mgmt-backdoor-${replace(route.value, "/", "-")}"
+      address_prefix = route.value
+      next_hop_type  = "Internet"
+    }
+  }
 }
 
 resource "azurerm_subnet_route_table_association" "workload_vwan" {
