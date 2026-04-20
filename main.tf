@@ -881,21 +881,27 @@ output "panos_vpn_set_commands" {
     set network ike gateway azure-vnet-vng protocol ikev2 ike-crypto-profile azure-ike
     set network ike gateway azure-vnet-vng protocol ikev2 dpd enable yes
     set network ike gateway azure-vnet-vng local-address interface ${var.panos_outside_iface}
+    set network ike gateway azure-vnet-vng local-id id ${var.remote_peer_public_ike_ip} type ipaddr
     set network ike gateway azure-vnet-vng peer-address ip ${azurerm_public_ip.vng.ip_address}
+    set network ike gateway azure-vnet-vng peer-id id ${azurerm_public_ip.vng.ip_address} type ipaddr
 
     set network ike gateway azure-vwan-inst0 authentication pre-shared-key key ${nonsensitive(var.vpn_shared_key)}
     set network ike gateway azure-vwan-inst0 protocol version ikev2
     set network ike gateway azure-vwan-inst0 protocol ikev2 ike-crypto-profile azure-ike
     set network ike gateway azure-vwan-inst0 protocol ikev2 dpd enable yes
     set network ike gateway azure-vwan-inst0 local-address interface ${var.panos_outside_iface}
+    set network ike gateway azure-vwan-inst0 local-id id ${var.remote_peer_public_ike_ip} type ipaddr
     set network ike gateway azure-vwan-inst0 peer-address ip ${local.vwan_inst0_public_ip}
+    set network ike gateway azure-vwan-inst0 peer-id id ${local.vwan_inst0_public_ip} type ipaddr
 
     set network ike gateway azure-vwan-inst1 authentication pre-shared-key key ${nonsensitive(var.vpn_shared_key)}
     set network ike gateway azure-vwan-inst1 protocol version ikev2
     set network ike gateway azure-vwan-inst1 protocol ikev2 ike-crypto-profile azure-ike
     set network ike gateway azure-vwan-inst1 protocol ikev2 dpd enable yes
     set network ike gateway azure-vwan-inst1 local-address interface ${var.panos_outside_iface}
+    set network ike gateway azure-vwan-inst1 local-id id ${var.remote_peer_public_ike_ip} type ipaddr
     set network ike gateway azure-vwan-inst1 peer-address ip ${local.vwan_inst1_public_ip}
+    set network ike gateway azure-vwan-inst1 peer-id id ${local.vwan_inst1_public_ip} type ipaddr
 
     # --- IPsec tunnels ---
     set network tunnel ipsec azure-vnet-vng auto-key ike-gateway azure-vnet-vng
