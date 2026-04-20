@@ -74,6 +74,11 @@ variable "bgp_peer_asn" {
   description = "BGP ASN of the external peer"
 }
 
+variable "bgp_peer_peering_address" {
+  type        = string
+  description = "BGP peering address of the external peer (inner/loopback IP, not the IKE public IP)"
+}
+
 variable "vpn_shared_key" {
   type        = string
   sensitive   = true
@@ -234,7 +239,7 @@ resource "azurerm_local_network_gateway" "bgp_peer" {
 
   bgp_settings {
     asn                 = var.bgp_peer_asn
-    bgp_peering_address = var.bgp_peer_public_ip
+    bgp_peering_address = var.bgp_peer_peering_address
   }
 }
 
@@ -406,7 +411,7 @@ resource "azurerm_vpn_site" "bgp_peer" {
     ip_address = var.bgp_peer_public_ip
     bgp {
       asn             = var.bgp_peer_asn
-      peering_address = var.bgp_peer_public_ip
+      peering_address = var.bgp_peer_peering_address
     }
   }
 }

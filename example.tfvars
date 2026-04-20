@@ -3,8 +3,9 @@ location        = "eastus"
 prefix          = "cngfw-ft"
 
 # External BGP peer — single public IP that advertises 0.0.0.0/0
-bgp_peer_public_ip = "203.0.113.1"
-bgp_peer_asn       = 65001
+bgp_peer_public_ip      = "203.0.113.1"
+bgp_peer_asn            = 65001
+bgp_peer_peering_address = "169.254.0.1"  # inner/loopback IP for BGP session
 vpn_shared_key     = "changeme-use-a-strong-key"
 
 # Azure VNG and vWAN Hub VPN GW BGP ASNs
