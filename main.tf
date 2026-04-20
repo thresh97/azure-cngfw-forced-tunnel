@@ -165,6 +165,21 @@ variable "panos_tunnel_vwan1" {
 }
 
 # ---------------------------------------------------------------------------
+# Locals — filter vWAN VPN GW tunnel_ips to public only (sets include private)
+# ---------------------------------------------------------------------------
+
+locals {
+  vwan_inst0_public_ip = [
+    for ip in tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].tunnel_ips) : ip
+    if !cidrcontains("10.0.0.0/8", ip) && !cidrcontains("172.16.0.0/12", ip) && !cidrcontains("192.168.0.0/16", ip)
+  ][0]
+  vwan_inst1_public_ip = [
+    for ip in tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].tunnel_ips) : ip
+    if !cidrcontains("10.0.0.0/8", ip) && !cidrcontains("172.16.0.0/12", ip) && !cidrcontains("192.168.0.0/16", ip)
+  ][0]
+}
+
+# ---------------------------------------------------------------------------
 # Resource Group
 # ---------------------------------------------------------------------------
 
@@ -756,9 +771,9 @@ output "vwan_vpngw_bgp_asn" {
   value       = azurerm_vpn_gateway.main.bgp_settings[0].asn
 }
 
-output "vwan_vpngw_instance0_public_ips" {
-  description = "vWAN VPN GW instance 0 public IPs (IKE endpoints)"
-  value       = azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].tunnel_ips
+output "vwan_vpngw_instance0_public_ip" {
+  description = "vWAN VPN GW instance 0 public IP (IKE endpoint)"
+  value       = local.vwan_inst0_public_ip
 }
 
 output "vwan_vpngw_instance0_bgp_ips" {
@@ -766,9 +781,9 @@ output "vwan_vpngw_instance0_bgp_ips" {
   value       = azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].default_ips
 }
 
-output "vwan_vpngw_instance1_public_ips" {
-  description = "vWAN VPN GW instance 1 public IPs (IKE endpoints)"
-  value       = azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].tunnel_ips
+output "vwan_vpngw_instance1_public_ip" {
+  description = "vWAN VPN GW instance 1 public IP (IKE endpoint)"
+  value       = local.vwan_inst1_public_ip
 }
 
 output "vwan_vpngw_instance1_bgp_ips" {
@@ -816,8 +831,7 @@ output "workload_vwan_vm_public_ip" {
 # ---------------------------------------------------------------------------
 
 output "panos_vpn_set_commands" {
-  description = "PAN-OS configure-mode set commands for BGP-over-IPsec to Azure VNet VNG and vWAN VPN GW (3 tunnels). Sensitive — use: terraform output -raw panos_vpn_set_commands"
-  sensitive   = true
+  description = "PAN-OS configure-mode set commands for BGP-over-IPsec to Azure VNet VNG and vWAN VPN GW (3 tunnels)"
   value = !var.generate_panos_config ? null : <<-EOT
 
     # ==========================================================
@@ -847,26 +861,26 @@ output "panos_vpn_set_commands" {
     set network interface tunnel units ${var.panos_tunnel_vwan1}
 
     # --- IKE gateways ---
-    set network ike gateway azure-vnet-vng authentication pre-shared-key key ${var.vpn_shared_key}
+    set network ike gateway azure-vnet-vng authentication pre-shared-key key ${nonsensitive(var.vpn_shared_key)}
     set network ike gateway azure-vnet-vng protocol version ikev2
     set network ike gateway azure-vnet-vng protocol ikev2 ike-crypto-profile azure-ike
     set network ike gateway azure-vnet-vng protocol ikev2 dpd enable yes
     set network ike gateway azure-vnet-vng local-address interface ${var.panos_outside_iface}
     set network ike gateway azure-vnet-vng peer-address ip ${azurerm_public_ip.vng.ip_address}
 
-    set network ike gateway azure-vwan-inst0 authentication pre-shared-key key ${var.vpn_shared_key}
+    set network ike gateway azure-vwan-inst0 authentication pre-shared-key key ${nonsensitive(var.vpn_shared_key)}
     set network ike gateway azure-vwan-inst0 protocol version ikev2
     set network ike gateway azure-vwan-inst0 protocol ikev2 ike-crypto-profile azure-ike
     set network ike gateway azure-vwan-inst0 protocol ikev2 dpd enable yes
     set network ike gateway azure-vwan-inst0 local-address interface ${var.panos_outside_iface}
-    set network ike gateway azure-vwan-inst0 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].tunnel_ips)[0]}
+    set network ike gateway azure-vwan-inst0 peer-address ip ${local.vwan_inst0_public_ip}
 
-    set network ike gateway azure-vwan-inst1 authentication pre-shared-key key ${var.vpn_shared_key}
+    set network ike gateway azure-vwan-inst1 authentication pre-shared-key key ${nonsensitive(var.vpn_shared_key)}
     set network ike gateway azure-vwan-inst1 protocol version ikev2
     set network ike gateway azure-vwan-inst1 protocol ikev2 ike-crypto-profile azure-ike
     set network ike gateway azure-vwan-inst1 protocol ikev2 dpd enable yes
     set network ike gateway azure-vwan-inst1 local-address interface ${var.panos_outside_iface}
-    set network ike gateway azure-vwan-inst1 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].tunnel_ips)[0]}
+    set network ike gateway azure-vwan-inst1 peer-address ip ${local.vwan_inst1_public_ip}
 
     # --- IPsec tunnels ---
     set network tunnel ipsec azure-vnet-vng auto-key ike-gateway azure-vnet-vng
