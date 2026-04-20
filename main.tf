@@ -400,6 +400,10 @@ resource "azurerm_palo_alto_next_generation_firewall_virtual_network_strata_clou
       untrusted_subnet_id = azurerm_subnet.cngfw_untrusted.id
     }
   }
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # ===========================================================================
@@ -594,6 +598,10 @@ resource "azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_ma
   }
 
   depends_on = [azurerm_vpn_gateway.main]
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 
