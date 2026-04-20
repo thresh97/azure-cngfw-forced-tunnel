@@ -63,18 +63,18 @@ variable "prefix" {
   description = "Naming prefix for all resources"
 }
 
-variable "bgp_peer_public_ip" {
+variable "remote_peer_public_ike_ip" {
   type        = string
   description = "Public IP of the external BGP peer that advertises 0.0.0.0/0 (forced tunnel)"
 }
 
-variable "bgp_peer_asn" {
+variable "remote_peer_asn" {
   type        = number
   default     = 65001
   description = "BGP ASN of the external peer"
 }
 
-variable "bgp_peer_peering_address" {
+variable "remote_peer_private_bgp_ip" {
   type        = string
   description = "BGP peering address of the external peer (inner/loopback IP, not the IKE public IP)"
 }
@@ -235,11 +235,11 @@ resource "azurerm_local_network_gateway" "bgp_peer" {
   name                = "${var.prefix}-lgw-bgp-peer"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-  gateway_address     = var.bgp_peer_public_ip
+  gateway_address     = var.remote_peer_public_ike_ip
 
   bgp_settings {
-    asn                 = var.bgp_peer_asn
-    bgp_peering_address = var.bgp_peer_peering_address
+    asn                 = var.remote_peer_asn
+    bgp_peering_address = var.remote_peer_private_bgp_ip
   }
 }
 
@@ -408,10 +408,10 @@ resource "azurerm_vpn_site" "bgp_peer" {
 
   link {
     name       = "bgp-peer-link"
-    ip_address = var.bgp_peer_public_ip
+    ip_address = var.remote_peer_public_ike_ip
     bgp {
-      asn             = var.bgp_peer_asn
-      peering_address = var.bgp_peer_peering_address
+      asn             = var.remote_peer_asn
+      peering_address = var.remote_peer_private_bgp_ip
     }
   }
 }
