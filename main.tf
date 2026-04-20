@@ -170,6 +170,18 @@ variable "panos_tunnel_zone" {
   description = "PAN-OS security zone to assign all three tunnel interfaces"
 }
 
+variable "panos_loopback_zone" {
+  type        = string
+  default     = "loopback-zone"
+  description = "PAN-OS security zone for the BGP loopback interface"
+}
+
+variable "panos_egress_zone" {
+  type        = string
+  default     = "untrust"
+  description = "PAN-OS egress/untrust security zone"
+}
+
 # ---------------------------------------------------------------------------
 # Locals — filter vWAN VPN GW tunnel_ips to public only (sets include private)
 # ---------------------------------------------------------------------------
@@ -870,10 +882,11 @@ output "panos_vpn_set_commands" {
     set network interface tunnel units ${var.panos_tunnel_vwan0}
     set network interface tunnel units ${var.panos_tunnel_vwan1}
 
-    # --- Security zone ---
+    # --- Security zones ---
     set zone ${var.panos_tunnel_zone} network layer3 ${var.panos_tunnel_vnet}
     set zone ${var.panos_tunnel_zone} network layer3 ${var.panos_tunnel_vwan0}
     set zone ${var.panos_tunnel_zone} network layer3 ${var.panos_tunnel_vwan1}
+    set zone ${var.panos_loopback_zone} network layer3 ${var.panos_loopback_iface}
 
     # --- IKE gateways ---
     set network ike gateway azure-vnet-vng authentication pre-shared-key key ${nonsensitive(var.vpn_shared_key)}
@@ -953,5 +966,42 @@ output "panos_vpn_set_commands" {
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 local-address interface ${var.panos_loopback_iface}
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips)[0]}
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options hold-time 30
+
+    # --- Security policies ---
+    # Loopback → tunnel: BGP + ping (outbound BGP sessions from loopback to Azure peers)
+    set rulebase security rules loopback-to-azure from ${var.panos_loopback_zone}
+    set rulebase security rules loopback-to-azure to ${var.panos_tunnel_zone}
+    set rulebase security rules loopback-to-azure source any
+    set rulebase security rules loopback-to-azure destination any
+    set rulebase security rules loopback-to-azure application [ bgp ping ]
+    set rulebase security rules loopback-to-azure service application-default
+    set rulebase security rules loopback-to-azure action allow
+
+    # Tunnel → loopback: BGP + ping (Azure-initiated BGP + health checks)
+    set rulebase security rules azure-to-loopback from ${var.panos_tunnel_zone}
+    set rulebase security rules azure-to-loopback to ${var.panos_loopback_zone}
+    set rulebase security rules azure-to-loopback source any
+    set rulebase security rules azure-to-loopback destination any
+    set rulebase security rules azure-to-loopback application [ bgp ping ]
+    set rulebase security rules azure-to-loopback service application-default
+    set rulebase security rules azure-to-loopback action allow
+
+    # Tunnel → egress: all traffic (workload internet egress through CNGFW)
+    set rulebase security rules azure-to-egress from ${var.panos_tunnel_zone}
+    set rulebase security rules azure-to-egress to ${var.panos_egress_zone}
+    set rulebase security rules azure-to-egress source any
+    set rulebase security rules azure-to-egress destination any
+    set rulebase security rules azure-to-egress application any
+    set rulebase security rules azure-to-egress service any
+    set rulebase security rules azure-to-egress action allow
+
+    # --- NAT policy ---
+    # Tunnel → egress: interface SNAT on outside interface
+    set rulebase nat rules azure-egress-snat from ${var.panos_tunnel_zone}
+    set rulebase nat rules azure-egress-snat to ${var.panos_egress_zone}
+    set rulebase nat rules azure-egress-snat source any
+    set rulebase nat rules azure-egress-snat destination any
+    set rulebase nat rules azure-egress-snat service any
+    set rulebase nat rules azure-egress-snat source-translation dynamic-ip-and-port interface-address interface ${var.panos_outside_iface}
   EOT
 }
