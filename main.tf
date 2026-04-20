@@ -300,7 +300,7 @@ resource "azurerm_route_table" "gateway" {
 
   route {
     name                   = "workload-vnet-to-cngfw"
-    address_prefix         = azurerm_virtual_network.workload_vnet.address_space[0]
+    address_prefix         = tolist(azurerm_virtual_network.workload_vnet.address_space)[0]
     next_hop_type          = "VirtualAppliance"
     next_hop_in_ip_address = "10.128.1.4"
   }
