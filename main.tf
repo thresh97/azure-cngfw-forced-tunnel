@@ -817,6 +817,7 @@ output "workload_vwan_vm_public_ip" {
 
 output "panos_vpn_set_commands" {
   description = "PAN-OS configure-mode set commands for BGP-over-IPsec to Azure VNet VNG and vWAN VPN GW (3 tunnels). Sensitive — use: terraform output -raw panos_vpn_set_commands"
+  sensitive   = true
   value = !var.generate_panos_config ? null : <<-EOT
 
     # ==========================================================
