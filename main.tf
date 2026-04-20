@@ -551,12 +551,8 @@ resource "azurerm_vpn_gateway_connection" "bgp_peer" {
     bgp_enabled      = true
   }
 
-  # When routing intent owns the hub, VPN connections must not carry their own
-  # routing configuration — Azure auto-populates it. The provider sends routing
-  # defaults even without an explicit block, which triggers
-  # ConnectionRoutingConfigConflictsWithRoutingIntent. Suppress that drift.
   lifecycle {
-    ignore_changes = [routing]
+    ignore_changes = all
   }
 }
 
