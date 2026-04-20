@@ -159,6 +159,62 @@ Covers:
 
 ---
 
+## Verification
+
+### 1. SCM Security Policy (required)
+
+Cloud NGFW policy is managed entirely by Strata Cloud Manager — the CNGFW will not pass traffic without an explicit allow policy. In SCM, configure a security rule covering both CNGFW instances:
+
+| Field | Value |
+|---|---|
+| Source zone | trust / private (Azure workload side) |
+| Destination zone | untrust / public (egress side) |
+| Source address | any |
+| Destination address | any |
+| Application | any |
+| Action | Allow |
+
+Without this policy, workload traffic hits the CNGFW and is denied regardless of Azure routing being correct.
+
+### 2. BGP Session Verification (on external peer)
+
+```bash
+# Confirm all three sessions are established
+show routing protocol bgp peer
+
+# Confirm 0.0.0.0/0 is being advertised to Azure peers
+show routing route type bgp
+```
+
+### 3. Azure Route Verification
+
+In the Azure portal, check effective routes on the workload VM NIC for each path:
+
+- **VNet path** — workload VM NIC should show `0.0.0.0/0` via `VirtualAppliance` (CNGFW trusted IP `10.128.1.4`)
+- **vWAN path** — workload VM NIC should show `0.0.0.0/0` learned from the vWAN hub via routing intent
+
+Also verify the VNG and vWAN VPN GW BGP learned routes include `0.0.0.0/0` from the external peer.
+
+### 4. End-to-End Egress Test
+
+SSH to each workload VM using its public IP (direct via `allowed_mgmt_cidrs` backdoor route):
+
+```bash
+ssh azureuser@<workload_vnet_vm_public_ip>
+ssh azureuser@<workload_vwan_vm_public_ip>
+```
+
+From each VM, verify internet egress is exiting via the external peer (not Azure's public IPs):
+
+```bash
+curl -s ifconfig.me
+# Should return the external peer's public egress IP, not an Azure IP
+```
+
+Check traffic logs in SCM to confirm the flows are hitting the CNGFW policy.
+
+---
+
 ## vWAN Routing Intent
 
 Routing intent is **not managed by Terraform** — configure it via the Azure portal after apply:
