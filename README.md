@@ -282,12 +282,42 @@ Key fields to verify:
 
 ### 3. Azure Route Verification
 
-In the Azure portal, check effective routes on the workload VM NIC for each path:
+**VNet workload VM effective routes** — should show `0.0.0.0/0` via `VirtualAppliance` at `10.128.1.4`:
 
-- **VNet path** — workload VM NIC should show `0.0.0.0/0` via `VirtualAppliance` (CNGFW trusted IP `10.128.1.4`)
-- **vWAN path** — workload VM NIC should show `0.0.0.0/0` learned from the vWAN hub via routing intent
+```bash
+az network nic show-effective-route-table \
+  --resource-group cngfw-ft-rg \
+  --name cngfw-ft-workload-vnet-nic \
+  --output table
+```
 
-Also verify the VNG and vWAN VPN GW BGP learned routes include `0.0.0.0/0` from the external peer.
+**VNG BGP learned routes** — should include `0.0.0.0/0` learned from the external peer. The trusted subnet is delegated to PAN with no queryable NIC; the VNG BGP tables are the best view of what the hub VNet knows:
+
+```bash
+az network vnet-gateway list-learned-routes \
+  --resource-group cngfw-ft-rg \
+  --name cngfw-ft-vng \
+  --output table
+```
+
+**VNG BGP advertised routes** — confirms which prefixes Azure is advertising back to the external peer:
+
+```bash
+az network vnet-gateway list-advertised-routes \
+  --resource-group cngfw-ft-rg \
+  --name cngfw-ft-vng \
+  --peer <remote_peer_private_bgp_ip> \
+  --output table
+```
+
+**vWAN workload VM effective routes** — should show `0.0.0.0/0` learned from the vWAN hub via routing intent:
+
+```bash
+az network nic show-effective-route-table \
+  --resource-group cngfw-ft-rg \
+  --name cngfw-ft-workload-vwan-nic \
+  --output table
+```
 
 ### 4. End-to-End Egress Test
 
