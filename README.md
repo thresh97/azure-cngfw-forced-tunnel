@@ -394,6 +394,8 @@ Check traffic logs in SCM to confirm the flows are hitting the CNGFW policy.
 
 ## Cloud NGFW Dataplane Architecture
 
+Understanding this architecture explains how and why the forced tunneling configuration works — and why it is required rather than arbitrary or overly complex.
+
 Cloud NGFW is a managed Palo Alto Networks service built on a zonal autoscaling group of two-arm dataplane NGFW VMs running PAN-OS:
 
 - **Public (untrust) side** — External Load Balancer (ELB) with DNAT/SNAT rules handles inbound/outbound internet traffic. Default route `0.0.0.0/0` points out the public interface.
