@@ -2,7 +2,11 @@
 
 Terraform deployment demonstrating forced internet tunneling through Palo Alto Networks Cloud NGFW (Strata Cloud Manager managed) via BGP-over-IPsec S2S VPN. Covers both the **Hub VNet** and **Virtual WAN** CNGFW deployment models in a single configuration. Both paths validated.
 
-> **Known gap:** Additional private prefixes (`trusted_address_ranges`) on both CNGFW instances and additional prefixes on the vWAN routing intent are not yet managed by Terraform in this deployment. Both CNGFW resources have `lifecycle { ignore_changes = all }` set. The additional private prefixes must be configured at initial deployment time — they cannot be added after the fact. Workaround: for the VNet path, delete and redeploy the CNGFW manually with the prefixes set; for the vWAN path, delete in order — Routing Intent → NVA → CNGFW — then redeploy manually with the prefixes set, and reapply Routing Intent with the disaggregated default routes (`0.0.0.0/1` and `128.0.0.0/1`) as additional prefixes.
+> **Known gap:** Additional private prefixes (`trusted_address_ranges`) on both CNGFW instances and additional prefixes on the vWAN routing intent are not yet managed by Terraform in this deployment. Both CNGFW resources have `lifecycle { ignore_changes = all }` set. The additional private prefixes must be configured at initial deployment time — they cannot be added after the fact.
+>
+> **Workaround — VNet CNGFW:** Delete the CNGFW instance and redeploy manually, setting additional private prefixes to the disaggregated default routes `0.0.0.0/1` and `128.0.0.0/1`.
+>
+> **Workaround — vWAN CNGFW:** Delete in order — Routing Intent → NVA → CNGFW — then redeploy the CNGFW manually with additional private prefixes set to `0.0.0.0/1` and `128.0.0.0/1`, then reapply Routing Intent with the same disaggregated default routes as additional prefixes.
 
 An external BGP peer (simulating on-premises) advertises `0.0.0.0/0` over IKEv2 S2S tunnels to both the Hub VNet VNG and the vWAN Hub VPN Gateway, causing internet-bound traffic from Azure workloads to egress through the on-premises path via CNGFW inspection.
 
@@ -340,6 +344,19 @@ curl -s ifconfig.me
 ```
 
 Check traffic logs in SCM to confirm the flows are hitting the CNGFW policy.
+
+---
+
+## Cloud NGFW Dataplane Architecture
+
+Cloud NGFW is a managed PAN-OS service built on a zonal autoscaling group of two-arm dataplane NGFW VMs:
+
+- **Public (untrust) side** — External Load Balancer (ELB) with DNAT/SNAT rules handles inbound/outbound internet traffic. Default route `0.0.0.0/0` points out the public interface.
+- **Private (trust) side** — Internal Standard Load Balancer (ISLB) with HA Ports handles traffic from Azure workloads. RFC1918 routes are served out the private interface.
+
+HA Ports on the ISLB guarantee flow symmetry — both directions of a given flow are pinned to the same NGFW instance through a single frontend IP. This symmetry guarantee only holds for traffic traversing the private interface via the ISLB.
+
+**Why disaggregated default routes are required for forced tunneling:** Forced tunnel traffic (workload → CNGFW → VPN → on-prem → internet) must traverse the private interface to benefit from HA Ports symmetry. Without `trusted_address_ranges = ["0.0.0.0/1", "128.0.0.0/1"]`, the CNGFW would route all internet-bound traffic directly out the public interface via the `0.0.0.0/0` default, bypassing the tunnel entirely. The disaggregated routes are more specific than `0/0` and are treated as private prefixes, steering the traffic out the trust side through the ISLB and into the VPN tunnel toward on-prem.
 
 ---
 
