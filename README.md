@@ -176,7 +176,9 @@ Cloud NGFW policy is managed entirely by Strata Cloud Manager — the CNGFW will
 
 Without this policy, workload traffic hits the CNGFW and is denied regardless of Azure routing being correct.
 
-### 2. BGP Session Verification (on external peer)
+### 2. BGP Session Verification (external PAN-OS peer — virtual-router/LRE)
+
+> The following CLI commands are run on the **external BGP peer device** (PAN-OS firewall with traditional virtual-router/LRE). The Cloud NGFW has no local CLI — its traffic logs are viewed in SCM.
 
 Confirm all three Azure peers are `Established` and advertising/receiving prefixes:
 
