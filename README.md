@@ -366,16 +366,6 @@ HA Ports on the ISLB guarantee flow symmetry — both directions of a given flow
 
 ---
 
-## vWAN Routing Intent
-
-Routing intent is **not managed by Terraform** — configure it via the Azure portal after apply:
-
-1. Navigate to vWAN hub → **Routing Intent and Routing Policies**
-2. Set next hop to the CNGFW NVA for **Private Traffic** (and **Internet Traffic** if desired)
-
-See [Azure vWAN Internet Routing](https://learn.microsoft.com/en-us/azure/virtual-wan/about-internet-routing) for details on how BGP-learned routes interact with routing intent.
-
----
 
 ## Outputs
 
