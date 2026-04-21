@@ -163,14 +163,16 @@ Covers:
 
 ### 1. SCM Security Policy (required)
 
-Cloud NGFW policy is managed entirely by Strata Cloud Manager — the CNGFW will not pass traffic without an explicit allow policy. In SCM, configure a security rule covering both CNGFW instances:
+Cloud NGFW policy is managed entirely by Strata Cloud Manager — the CNGFW will not pass traffic without an explicit allow policy.
+
+> **As of April 2026:** SCM-managed security policies do not support security zones as match criteria. Zones appear in traffic logs but cannot be used in policy rules. Use IP address-based matching instead.
+
+Configure a security rule covering both CNGFW instances using address-based matching for internet egress:
 
 | Field | Value |
 |---|---|
-| Source zone | trust / private (Azure workload side) |
-| Destination zone | untrust / public (egress side) |
-| Source address | any |
-| Destination address | any |
+| Source address | `10.0.0.0/8` (Azure workload RFC1918 space) |
+| Destination address | `10.0.0.0/8` negated (i.e., not RFC1918 = internet) |
 | Application | any |
 | Action | Allow |
 
