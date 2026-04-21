@@ -165,7 +165,7 @@ Covers:
 
 Cloud NGFW policy is managed entirely by Strata Cloud Manager — the CNGFW will not pass traffic without an explicit allow policy.
 
-> **As of April 2026:** SCM-managed security policies do not support security zones as match criteria. Zones appear in traffic logs but cannot be used in policy rules. Use IP address-based matching instead.
+> **As of April 2026:** SCM-managed Cloud NGFW security policies do not support security zones as match criteria. Zones appear in traffic logs but cannot be used in policy rules. Use IP address-based matching instead.
 
 Configure a security rule covering both CNGFW instances using address-based matching for internet egress:
 
