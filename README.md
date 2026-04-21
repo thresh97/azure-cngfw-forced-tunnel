@@ -71,16 +71,16 @@ S2C (response): internet → on-prem → S2S tunnel → VPN GW → CNGFW private
 
 ## IP Allocation
 
-| Resource | CIDR |
-|---|---|
-| Hub VNet | 10.128.0.0/16 |
-| GatewaySubnet | 10.128.0.0/27 |
-| CNGFW Trusted | 10.128.1.0/24 |
-| CNGFW Untrusted | 10.128.2.0/24 |
-| CNGFW Mgmt | 10.128.3.0/24 |
-| vWAN Hub | 10.129.0.0/23 |
-| VNet Workload VNet | 10.130.0.0/16 |
-| vWAN Workload VNet | 10.131.0.0/16 |
+| Resource | CIDR | Path |
+|---|---|---|
+| Hub VNet | 10.128.0.0/16 | VNet CNGFW |
+| GatewaySubnet | 10.128.0.0/27 | VNet CNGFW |
+| CNGFW Trusted | 10.128.1.0/24 | VNet CNGFW |
+| CNGFW Untrusted | 10.128.2.0/24 | VNet CNGFW |
+| CNGFW Mgmt | 10.128.3.0/24 | VNet CNGFW |
+| vWAN Hub | 10.129.0.0/23 | vWAN CNGFW |
+| VNet Workload VNet | 10.130.0.0/16 | VNet CNGFW |
+| vWAN Workload VNet | 10.131.0.0/16 | vWAN CNGFW |
 
 ---
 
