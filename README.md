@@ -176,7 +176,7 @@ Configure a security rule covering both CNGFW instances using address-based matc
 | Application | any |
 | Action | Allow |
 
-Internet backhaul via forced tunneling is inherently intra-zone — traffic enters and exits the CNGFW on the same interface (firewall on a stick). A default intra-zone allow policy exists, but an explicit policy should be defined for visibility and control (logging, application identification, etc.).
+Internet backhaul via forced tunneling is inherently intra-zone — traffic enters and exits the CNGFW on the same interface (firewall on a stick). While SCM has a default intra-zone allow, Cloud NGFW has a local default intra-zone **block** that is not logged. An explicit policy must be defined in SCM and pushed to the CNGFW — traffic will be silently dropped without it.
 
 ### 2. BGP Session Verification (external PAN-OS peer — virtual-router/LRE)
 
