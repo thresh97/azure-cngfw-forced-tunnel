@@ -349,7 +349,7 @@ Check traffic logs in SCM to confirm the flows are hitting the CNGFW policy.
 
 ## Cloud NGFW Dataplane Architecture
 
-Cloud NGFW is a managed PAN-OS service built on a zonal autoscaling group of two-arm dataplane NGFW VMs:
+Cloud NGFW is a managed Palo Alto Networks service built on a zonal autoscaling group of two-arm dataplane NGFW VMs running PAN-OS:
 
 - **Public (untrust) side** — External Load Balancer (ELB) with DNAT/SNAT rules handles inbound/outbound internet traffic. Default route `0.0.0.0/0` points out the public interface.
 - **Private (trust) side** — Internal Standard Load Balancer (ISLB) with HA Ports handles traffic from Azure workloads. RFC1918 routes are served out the private interface.
