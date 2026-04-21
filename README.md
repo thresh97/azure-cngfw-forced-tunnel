@@ -2,7 +2,7 @@
 
 Terraform deployment demonstrating forced internet tunneling through Palo Alto Networks Cloud NGFW (Strata Cloud Manager managed) via BGP-over-IPsec S2S VPN. Covers both the **Hub VNet** and **Virtual WAN** CNGFW deployment models in a single configuration. Both paths validated.
 
-> **Known gap:** Additional private prefixes (`trusted_address_ranges`) on both CNGFW instances and additional prefixes on the vWAN routing intent are not yet managed by Terraform in this deployment. Both CNGFW resources have `lifecycle { ignore_changes = all }` set. The additional private prefixes must be configured at initial deployment time — they cannot be added after the fact.
+> **Known gap:** Additional prefixes to private traffic range on both CNGFW instances and additional prefixes on the vWAN routing intent are not yet managed by Terraform in this deployment. Both CNGFW resources have `lifecycle { ignore_changes = all }` set. The additional private prefixes must be configured at initial deployment time — they cannot be added after the fact.
 >
 > **Workaround — VNet CNGFW:** Delete the CNGFW instance and redeploy manually, setting additional private prefixes to the disaggregated default routes `0.0.0.0/1` and `128.0.0.0/1`.
 >
@@ -352,15 +352,15 @@ Check traffic logs in SCM to confirm the flows are hitting the CNGFW policy.
 Cloud NGFW is a managed Palo Alto Networks service built on a zonal autoscaling group of two-arm dataplane NGFW VMs running PAN-OS:
 
 - **Public (untrust) side** — External Load Balancer (ELB) with DNAT/SNAT rules handles inbound/outbound internet traffic. Default route `0.0.0.0/0` points out the public interface.
-- **Private (trust) side** — Internal Standard Load Balancer (ISLB) with HA Ports handles traffic from Azure workloads. RFC1918 routes are served out the private interface.
+- **Private (trust) side** — Internal Standard Load Balancer (ISLB) with HA Ports handles traffic from Azure workloads. Traffic destined for RFC1918 prefixes is forwarded out the private interface.
 
 HA Ports on the ISLB guarantee flow symmetry — both directions of a given flow are pinned to the same NGFW instance through a single frontend IP. This symmetry guarantee only holds for traffic traversing the private interface via the ISLB.
 
-**Why disaggregated default routes are required for forced tunneling:** Both the vWAN Routing Intent additional prefixes and the CNGFW `trusted_address_ranges` must be set to `["0.0.0.0/1", "128.0.0.0/1"]` — they serve distinct roles and neither alone is sufficient:
+**Why disaggregated default routes are required for forced tunneling:** Both the vWAN Routing Intent additional prefixes and the CNGFW additional prefixes to private traffic range must be set to `0.0.0.0/1` and `128.0.0.0/1` — they serve distinct roles and neither alone is sufficient:
 
-- **RI additional prefixes only (no CNGFW `trusted_address_ranges`):** The `/1` routes are injected into workload route tables pointing to the CNGFW private interface. Traffic arrives at the CNGFW correctly, but the CNGFW has no private prefix match for internet-bound destinations and falls back to its `0.0.0.0/0` default out the public interface — traffic is SNAT'd and egresses publicly, not forced through the tunnel.
+- **RI additional prefixes only (no CNGFW additional private prefixes):** The `/1` routes are injected into workload route tables pointing to the CNGFW private interface. Traffic arrives at the CNGFW correctly, but the CNGFW has no private prefix match for internet-bound destinations and falls back to its `0.0.0.0/0` default out the public interface — traffic is SNAT'd and egresses publicly, not forced through the tunnel.
 
-- **CNGFW `trusted_address_ranges` only (no RI additional prefixes):** With RI set to private traffic only, only RFC1918 prefixes are injected into workload route tables. Internet-bound traffic (`0.0.0.0/0`) is never redirected to the CNGFW in the first place.
+- **CNGFW additional private prefixes only (no RI additional prefixes):** With RI set to private traffic only, only RFC1918 prefixes are injected into workload route tables. Internet-bound traffic is never redirected to the CNGFW in the first place.
 
 - **Both configured:** The `/1` routes are injected into workload route tables via RI, steering internet-bound traffic to the CNGFW private interface. The CNGFW matches the `/1` prefixes as private destinations (more specific than the public `0.0.0.0/0`), routes out the trust side through the ISLB, and delivers traffic into the VPN tunnel toward on-prem — transparent forced tunneling with HA Ports symmetry preserved.
 
@@ -424,6 +424,7 @@ The vWAN Hub VPN Gateway is **inherently active-active** — it always deploys t
 
 - [Azure vWAN Internet Routing](https://learn.microsoft.com/en-us/azure/virtual-wan/about-internet-routing)
 - [Cloud NGFW for Azure Deployment Architectures](https://live.paloaltonetworks.com/t5/cloud-ngfw-for-azure-articles/cloud-ngfw-for-azure-deployment-architectures/ta-p/626697) — "Centralized VNET Deployment Model: Forced Tunneling Through Private Subnet of Cloud NGFW" (slide 12)
+- [Cloud NGFW for Azure — Deploy in a VNet: Additional Prefixes to Private Traffic Range](https://docs.paloaltonetworks.com/cloud-ngfw-azure/administration/cloud-ngfw-for-azure-deployment-resources/cloud-ngfw-for-azure-deploy-in-a-vnet)
 - [Azure VPN Gateway BGP overview](https://learn.microsoft.com/en-us/azure/vpn-gateway/vpn-gateway-bgp-overview)
 - [vWAN routing intent and routing policies](https://learn.microsoft.com/en-us/azure/virtual-wan/how-to-routing-policies)
 - [Azure VPN Gateway UDRs and BGP](https://learn.microsoft.com/en-us/azure/vpn-gateway/vpn-gateway-about-forced-tunneling)
