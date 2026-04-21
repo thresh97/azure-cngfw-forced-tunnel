@@ -339,6 +339,30 @@ See [Azure vWAN Internet Routing](https://learn.microsoft.com/en-us/azure/virtua
 
 ---
 
+## VPN Gateway SKUs and BGP Resilience
+
+### VNet VNG — Active-Passive (single peer)
+
+This deployment uses `VpnGw2AZ` in the default **active-passive** configuration (`active_active = false`) with a single public IP and a single BGP peering address. From the remote peer, this means **one BGP session and one IPsec tunnel** to the VNet VNG.
+
+The same SKU supports **active-active** mode, which deploys two gateway instances each with their own public IP and BGP peering address. In active-active, the remote peer establishes **two BGP sessions and two tunnels** — one to each instance — providing redundancy if one instance fails. Active-active was intentionally not used here to keep the VNet path simple for demonstration; in a production design it would be the preferred choice.
+
+The `AZ` suffix on the SKU (`VpnGw2AZ`) denotes zone-redundant deployment across availability zones — a requirement as non-AZ SKUs are being deprecated in Azure.
+
+### vWAN Hub VPN GW — Always Active-Active (two peers)
+
+The vWAN Hub VPN Gateway is **inherently active-active** — it always deploys two instances regardless of configuration. Each instance has its own public IP and BGP peering address, which is why the Terraform outputs expose `instance0` and `instance1` separately and why the PAN-OS config generates **two tunnels** (`panos_tunnel_vwan0`, `panos_tunnel_vwan1`) and **two BGP peers** (`azure-vwan-inst0`, `azure-vwan-inst1`) for the vWAN path.
+
+### Summary
+
+| Gateway | Mode | Tunnels to Remote Peer | BGP Sessions |
+|---|---|---|---|
+| VNet VNG (`VpnGw2AZ`) | Active-passive (this deployment) | 1 | 1 |
+| VNet VNG (`VpnGw2AZ`) | Active-active (optional) | 2 | 2 |
+| vWAN Hub VPN GW | Active-active (always) | 2 | 2 |
+
+---
+
 ## Supporting Documentation
 
 - [Azure vWAN Internet Routing](https://learn.microsoft.com/en-us/azure/virtual-wan/about-internet-routing)
