@@ -176,7 +176,7 @@ Configure a security rule covering both CNGFW instances using address-based matc
 | Application | any |
 | Action | Allow |
 
-Without this policy, workload traffic hits the CNGFW and is denied regardless of Azure routing being correct.
+Internet backhaul via forced tunneling is inherently intra-zone — traffic enters and exits the CNGFW on the same interface (firewall on a stick). An explicit policy is required to permit this intra-zone flow.
 
 ### 2. BGP Session Verification (external PAN-OS peer — virtual-router/LRE)
 
