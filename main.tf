@@ -278,14 +278,6 @@ resource "azurerm_subnet_network_security_group_association" "cngfw_untrusted" {
   network_security_group_id = azurerm_network_security_group.cngfw.id
 }
 
-# Management subnet (out-of-band / SSH validation)
-resource "azurerm_subnet" "cngfw_mgmt" {
-  name                 = "${var.prefix}-cngfw-mgmt"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.hub.name
-  address_prefixes     = ["10.128.3.0/24"]
-}
-
 # ---------------------------------------------------------------------------
 # GatewaySubnet route table — return traffic symmetry
 # Routes peered workload VNet space back through CNGFW trusted IP so that

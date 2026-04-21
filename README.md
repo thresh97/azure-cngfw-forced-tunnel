@@ -77,7 +77,6 @@ S2C (response): internet → on-prem → S2S tunnel → VPN GW → CNGFW private
 | VNet GatewaySubnet | 10.128.0.0/27 |
 | VNet CNGFW Trusted | 10.128.1.0/24 |
 | VNet CNGFW Untrusted | 10.128.2.0/24 |
-| VNet CNGFW Mgmt | 10.128.3.0/24 |
 | VNet Workload VNet | 10.130.0.0/16 |
 | vWAN Hub | 10.129.0.0/23 |
 | vWAN Workload VNet | 10.131.0.0/16 |
