@@ -230,6 +230,24 @@ Expected — hub VNet and workload VNet prefixes learned from Azure VNG:
 
 Run the same `rib-out-detail` and `loc-rib-detail` commands for `azure-vwan-inst0` and `azure-vwan-inst1`.
 
+Confirm all three IPsec tunnels are active, BGP sessions are established, and workload traffic is flowing:
+
+```
+show session all filter from azure-vpn
+show session all filter to azure-vpn
+```
+
+Look for the following session types — src/dst and zone order may be reversed depending on which side initiated:
+
+| Application | Type | Zones | Count | Meaning |
+|---|---|---|---|---|
+| `ipsec-esp` | `TUNN` | `azure-vpn` ↔ `zone-internet` | 3 | One IPsec tunnel per Azure peer (VNet VNG + vWAN inst0/inst1) |
+| `bgp` | `FLOW` | `zone-internal` ↔ `azure-vpn` | 3 | BGP session from loopback to each Azure BGP peer IP |
+| `web-browsing` | `FLOW` | `azure-vpn` → `zone-internet` | 1+ | **Key proof** — workload VM traffic (`10.130.0.4`) force-tunneled through firewall to internet |
+| `ntp-base` | `FLOW` | `azure-vpn` → `zone-internet` | 2 | Azure-side NTP flows (benign) |
+
+The `web-browsing` session sourced from `10.130.0.4` (workload VNet VM) transiting from `azure-vpn` to `zone-internet` with SNAT to the peer public IP confirms the full forced tunnel path: workload VM → VNG → IPsec tunnel → firewall → internet.
+
 ### 3. Azure Route Verification
 
 In the Azure portal, check effective routes on the workload VM NIC for each path:
