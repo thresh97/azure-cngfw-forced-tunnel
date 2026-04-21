@@ -2,7 +2,7 @@
 
 Terraform deployment demonstrating forced internet tunneling through Palo Alto Networks Cloud NGFW (Strata Cloud Manager managed) via BGP-over-IPsec S2S VPN. Covers both the **Hub VNet** and **Virtual WAN** CNGFW deployment models in a single configuration. Both paths validated.
 
-> **Known gap:** Additional private prefixes (`trusted_address_ranges`) on both CNGFW instances and additional prefixes on the vWAN routing intent are not yet managed by Terraform in this deployment. Both CNGFW resources have `lifecycle { ignore_changes = all }` set. Workaround to set these at deploy time: for the VNet path, delete and redeploy the CNGFW manually; for the vWAN path, delete in order — Routing Intent → NVA → CNGFW — then redeploy manually.
+> **Known gap:** Additional private prefixes (`trusted_address_ranges`) on both CNGFW instances and additional prefixes on the vWAN routing intent are not yet managed by Terraform in this deployment. Both CNGFW resources have `lifecycle { ignore_changes = all }` set. The additional private prefixes must be configured at initial deployment time — they cannot be added after the fact. Workaround: for the VNet path, delete and redeploy the CNGFW manually with the prefixes set; for the vWAN path, delete in order — Routing Intent → NVA → CNGFW — then redeploy manually with the prefixes set.
 
 An external BGP peer (simulating on-premises) advertises `0.0.0.0/0` over IKEv2 S2S tunnels to both the Hub VNet VNG and the vWAN Hub VPN Gateway, causing internet-bound traffic from Azure workloads to egress through the on-premises path via CNGFW inspection.
 
