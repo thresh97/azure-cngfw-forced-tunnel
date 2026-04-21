@@ -559,7 +559,6 @@ resource "azurerm_vpn_gateway_connection" "bgp_peer" {
 # ---------------------------------------------------------------------------
 # PAN NVA — required prerequisite for vWAN CNGFW
 # ---------------------------------------------------------------------------
-
 resource "azurerm_palo_alto_virtual_network_appliance" "main" {
   name           = "${var.prefix}-pan-nva"
   virtual_hub_id = azurerm_virtual_hub.main.id
@@ -580,7 +579,6 @@ resource "azurerm_public_ip" "cngfw_vwan" {
 # ---------------------------------------------------------------------------
 # vWAN CNGFW — Strata Cloud Manager managed
 # ---------------------------------------------------------------------------
-
 resource "azurerm_palo_alto_next_generation_firewall_virtual_hub_strata_cloud_manager" "main" {
   name                             = "${var.prefix}-cngfw-vhub"
   resource_group_name              = azurerm_resource_group.main.name
@@ -965,36 +963,115 @@ output "panos_vpn_set_commands" {
     set network ${var.panos_router_type} ${var.panos_vr} interface ${var.panos_tunnel_vwan1}
 
     # --- Static routes — BGP peer IPs via tunnel interfaces ---
-    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vnet-vng-bgp destination ${tolist(azurerm_virtual_network_gateway.hub.bgp_settings[0].peering_addresses[0].default_addresses)[0]}/32 interface ${var.panos_tunnel_vnet}
-    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vwan-inst0-bgp destination ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].default_ips)[0]}/32 interface ${var.panos_tunnel_vwan0}
-    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vwan-inst1-bgp destination ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips)[0]}/32 interface ${var.panos_tunnel_vwan1}
+    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vnet-vng-bgp destination ${tolist(azurerm_virtual_network_gateway.hub.bgp_settings[0].peering_addresses[0].default_addresses)[0]}/32 interface ${var.panos_tunnel_vnet} metric 10 bfd profile None
+    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vwan-inst0-bgp destination ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].default_ips)[0]}/32 interface ${var.panos_tunnel_vwan0} metric 10 bfd profile None
+    set network ${var.panos_router_type} ${var.panos_vr} routing-table ip static-route azure-vwan-inst1-bgp destination ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips)[0]}/32 interface ${var.panos_tunnel_vwan1} metric 10 bfd profile None
 
-    # --- BGP ---
+    # --- ECMP ---
+    set network ${var.panos_router_type} ${var.panos_vr} ecmp enable yes
+    set network ${var.panos_router_type} ${var.panos_vr} ecmp algorithm ip-modulo
+    set network ${var.panos_router_type} ${var.panos_vr} ecmp symmetric-return yes
+
+    # --- BGP global ---
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp enable yes
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp router-id ${var.remote_peer_private_bgp_ip}
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp local-as ${var.remote_peer_asn}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp install-route yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp allow-redist-default-route yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp reject-default-route no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp routing-options graceful-restart enable yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp global-bfd profile None
 
-    # VNet VNG peer
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet type ebgp
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng peer-as ${var.vng_bgp_asn}
+    # --- BGP peer group: azure-vnet ---
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet type ebgp remove-private-as yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet type ebgp import-nexthop original
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet type ebgp export-nexthop use-self
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet aggregated-confed-as-path yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet soft-reset-with-stored-info no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet enable yes
+
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng peer-address ip ${tolist(azurerm_virtual_network_gateway.hub.bgp_settings[0].peering_addresses[0].default_addresses)[0]}
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng local-address ip ${var.remote_peer_private_bgp_ip}/32
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng local-address interface ${var.panos_loopback_iface}
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng peer-address ip ${tolist(azurerm_virtual_network_gateway.hub.bgp_settings[0].peering_addresses[0].default_addresses)[0]}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng peer-as ${var.vng_bgp_asn}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng enable yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options incoming-bgp-connection remote-port 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options incoming-bgp-connection allow yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options outgoing-bgp-connection local-port 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options outgoing-bgp-connection allow yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options multihop 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options keep-alive-interval 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options open-delay-time 0
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options hold-time 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options idle-hold-time 15
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng connection-options min-route-adv-interval 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng subsequent-address-family-identifier unicast yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng subsequent-address-family-identifier multicast no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng enable-mp-bgp no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng address-family-identifier ipv4
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng bfd profile Inherit-vr-global-setting
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng max-prefixes 5000
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng enable-sender-side-loop-detection yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng reflector-client non-client
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vnet peer azure-vnet-vng peering-type unspecified
 
-    # vWAN peers
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan type ebgp
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 peer-as 65515
+    # --- BGP peer group: azure-vwan ---
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan type ebgp remove-private-as yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan type ebgp import-nexthop original
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan type ebgp export-nexthop use-self
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan aggregated-confed-as-path yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan soft-reset-with-stored-info no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan enable yes
+
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].default_ips)[0]}
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 local-address ip ${var.remote_peer_private_bgp_ip}/32
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 local-address interface ${var.panos_loopback_iface}
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_0_bgp_peering_address[0].default_ips)[0]}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 peer-as 65515
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 enable yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options incoming-bgp-connection remote-port 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options incoming-bgp-connection allow yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options outgoing-bgp-connection local-port 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options outgoing-bgp-connection allow yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options multihop 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options keep-alive-interval 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options open-delay-time 0
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options hold-time 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options idle-hold-time 15
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 connection-options min-route-adv-interval 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 subsequent-address-family-identifier unicast yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 subsequent-address-family-identifier multicast no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 enable-mp-bgp no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 address-family-identifier ipv4
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 bfd profile Inherit-vr-global-setting
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 max-prefixes 5000
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 enable-sender-side-loop-detection yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 reflector-client non-client
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst0 peering-type unspecified
 
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peer-as 65515
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips)[0]}
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 local-address ip ${var.remote_peer_private_bgp_ip}/32
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 local-address interface ${var.panos_loopback_iface}
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peer-address ip ${tolist(azurerm_vpn_gateway.main.bgp_settings[0].instance_1_bgp_peering_address[0].default_ips)[0]}
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peer-as 65515
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 enable yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options incoming-bgp-connection remote-port 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options incoming-bgp-connection allow yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options outgoing-bgp-connection local-port 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options outgoing-bgp-connection allow yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options multihop 0
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options keep-alive-interval 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options open-delay-time 0
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options hold-time 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options idle-hold-time 15
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 connection-options min-route-adv-interval 30
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 subsequent-address-family-identifier unicast yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 subsequent-address-family-identifier multicast no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 enable-mp-bgp no
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 address-family-identifier ipv4
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 bfd profile Inherit-vr-global-setting
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 max-prefixes 5000
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 enable-sender-side-loop-detection yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 reflector-client non-client
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp peer-group azure-vwan peer azure-vwan-inst1 peering-type unspecified
 
     # --- BGP default route redistribution ---
     set network ${var.panos_router_type} ${var.panos_vr} protocol redist-profile default filter type static
@@ -1004,8 +1081,15 @@ output "panos_vpn_set_commands" {
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp redist-rules default address-family-identifier ipv4
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp redist-rules default enable yes
     set network ${var.panos_router_type} ${var.panos_vr} protocol bgp redist-rules default set-origin incomplete
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp allow-redist-default-route yes
-    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp reject-default-route no
+
+    # --- BGP export policy — advertise 0.0.0.0/0 only to Azure peer groups ---
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp policy export rules default_to_azure action allow update as-path none
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp policy export rules default_to_azure action allow update community none
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp policy export rules default_to_azure action allow update extended-community none
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp policy export rules default_to_azure match address-prefix 0.0.0.0/0 exact yes
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp policy export rules default_to_azure match route-table unicast
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp policy export rules default_to_azure used-by [ azure-vnet azure-vwan ]
+    set network ${var.panos_router_type} ${var.panos_vr} protocol bgp policy export rules default_to_azure enable yes
 
     # --- Security policies ---
     # Loopback → tunnel: BGP + ping (outbound BGP sessions from loopback to Azure peers)
