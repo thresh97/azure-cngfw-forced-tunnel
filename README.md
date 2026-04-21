@@ -47,8 +47,8 @@ An external BGP peer (simulating on-premises) advertises `0.0.0.0/0` over IKEv2 
 ### VNet CNGFW Traffic Flow
 
 ```
-Outbound:  Workload VM → UDR (0/0 → CNGFW trusted 10.128.1.4) → CNGFW → VNG → S2S tunnel → on-prem → internet
-Return:    internet → on-prem → S2S tunnel → VNG → GatewaySubnet UDR (10.130.0.0/16 → 10.128.1.4) → CNGFW → Workload VM
+C2S (request):  Workload VM → UDR (0/0 → 10.128.1.4) → CNGFW → VNG → S2S tunnel → on-prem → internet
+S2C (response): internet → on-prem → S2S tunnel → VNG → GatewaySubnet UDR (10.130.0.0/16 → 10.128.1.4) → CNGFW → Workload VM
 ```
 
 - Workload subnet UDR: `0.0.0.0/0 → VirtualAppliance → 10.128.1.4` (CNGFW trusted IP)
@@ -59,10 +59,12 @@ Return:    internet → on-prem → S2S tunnel → VNG → GatewaySubnet UDR (10
 ### vWAN CNGFW Traffic Flow
 
 ```
-Outbound:  Workload VM → vWAN hub → routing intent → CNGFW → VPN GW → S2S tunnel → on-prem → internet
+C2S (request):  Workload VM → vWAN hub (RI /1 routes) → CNGFW private interface → VPN GW → S2S tunnel → on-prem → internet
+S2C (response): internet → on-prem → S2S tunnel → VPN GW → CNGFW private interface (ISLB HA Ports, same instance) → vWAN hub → Workload VM
 ```
 
-- Routing intent configured via portal (not managed by Terraform)
+- Routing intent additional prefixes (`0.0.0.0/1`, `128.0.0.0/1`) inject disaggregated default routes into workload route tables via the vWAN hub
+- ISLB HA Ports guarantee the response path hits the same CNGFW instance as the request
 - vWAN Hub VPN GW is active-active with two instances; both tunnel to the same external peer
 
 ---
