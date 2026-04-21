@@ -178,13 +178,57 @@ Without this policy, workload traffic hits the CNGFW and is denied regardless of
 
 ### 2. BGP Session Verification (on external peer)
 
-```bash
-# Confirm all three sessions are established
-show routing protocol bgp peer
+Confirm all three Azure peers are `Established` and advertising/receiving prefixes:
 
-# Confirm 0.0.0.0/0 is being advertised to Azure peers
-show routing route type bgp
 ```
+show routing protocol bgp summary
+```
+
+Expected — all three Azure peers established, `Advertised pfx: 1` (the `0.0.0.0/0`), `Accepted pfx: 2` (hub VNet + workload VNet prefixes):
+
+```
+  peer azure-vnet-vng:    AS 65515, Established, IP 10.128.0.30
+    bgpAfiIpv4/unicast pfx:  Accepted pfx: 2, Advertised pfx: 1
+  peer azure-vwan-inst0:  AS 65515, Established, IP 10.129.0.13
+    bgpAfiIpv4/unicast pfx:  Accepted pfx: 2, Advertised pfx: 1
+  peer azure-vwan-inst1:  AS 65515, Established, IP 10.129.0.12
+    bgpAfiIpv4/unicast pfx:  Accepted pfx: 2, Advertised pfx: 1
+```
+
+Confirm `0.0.0.0/0` is being advertised outbound to Azure:
+
+```
+show routing protocol bgp rib-out-detail peer azure-vnet-vng
+```
+
+Expected:
+
+```
+  Prefix:           0.0.0.0/0
+  Nexthop:          <remote_peer_private_bgp_ip>
+  Advertise status: advertised
+  AS Path:          <remote_peer_asn>
+```
+
+Confirm Azure prefixes are being received (loc-rib):
+
+```
+show routing protocol bgp loc-rib-detail peer azure-vnet-vng
+```
+
+Expected — hub VNet and workload VNet prefixes learned from Azure VNG:
+
+```
+  Prefix:  10.128.0.0/16 *
+  Nexthop: 10.128.0.30
+  AS Path: 65515
+
+  Prefix:  10.130.0.0/16 *
+  Nexthop: 10.128.0.30
+  AS Path: 65515
+```
+
+Run the same `rib-out-detail` and `loc-rib-detail` commands for `azure-vwan-inst0` and `azure-vwan-inst1`.
 
 ### 3. Azure Route Verification
 
