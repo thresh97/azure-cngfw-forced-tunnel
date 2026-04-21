@@ -356,7 +356,13 @@ Cloud NGFW is a managed PAN-OS service built on a zonal autoscaling group of two
 
 HA Ports on the ISLB guarantee flow symmetry — both directions of a given flow are pinned to the same NGFW instance through a single frontend IP. This symmetry guarantee only holds for traffic traversing the private interface via the ISLB.
 
-**Why disaggregated default routes are required for forced tunneling:** Forced tunnel traffic (workload → CNGFW → VPN → on-prem → internet) must traverse the private interface to benefit from HA Ports symmetry. Without `trusted_address_ranges = ["0.0.0.0/1", "128.0.0.0/1"]`, the CNGFW would route all internet-bound traffic directly out the public interface via the `0.0.0.0/0` default, bypassing the tunnel entirely. The disaggregated routes are more specific than `0/0` and are treated as private prefixes, steering the traffic out the trust side through the ISLB and into the VPN tunnel toward on-prem.
+**Why disaggregated default routes are required for forced tunneling:** Both the vWAN Routing Intent additional prefixes and the CNGFW `trusted_address_ranges` must be set to `["0.0.0.0/1", "128.0.0.0/1"]` — they serve distinct roles and neither alone is sufficient:
+
+- **RI additional prefixes only (no CNGFW `trusted_address_ranges`):** The `/1` routes are injected into workload route tables pointing to the CNGFW private interface. Traffic arrives at the CNGFW correctly, but the CNGFW has no private prefix match for internet-bound destinations and falls back to its `0.0.0.0/0` default out the public interface — traffic is SNAT'd and egresses publicly, not forced through the tunnel.
+
+- **CNGFW `trusted_address_ranges` only (no RI additional prefixes):** With RI set to private traffic only, only RFC1918 prefixes are injected into workload route tables. Internet-bound traffic (`0.0.0.0/0`) is never redirected to the CNGFW in the first place.
+
+- **Both configured:** The `/1` routes are injected into workload route tables via RI, steering internet-bound traffic to the CNGFW private interface. The CNGFW matches the `/1` prefixes as private destinations (more specific than the public `0.0.0.0/0`), routes out the trust side through the ISLB, and delivers traffic into the VPN tunnel toward on-prem — transparent forced tunneling with HA Ports symmetry preserved.
 
 ---
 
