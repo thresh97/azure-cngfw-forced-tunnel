@@ -250,6 +250,36 @@ Look for the following session types — src/dst and zone order may be reversed 
 
 The `web-browsing` session sourced from `10.130.0.4` (workload VNet VM) transiting from `azure-vpn` to `zone-internet` with SNAT to the peer public IP confirms the full forced tunnel path: workload VM → VNG → IPsec tunnel → firewall → internet.
 
+Drill into any `web-browsing` session to confirm rule hit, NAT, and byte/packet counts:
+
+```
+show session id <id>
+```
+
+Key fields to verify:
+
+```
+        c2s flow:
+                source:      10.130.0.4 [azure-vpn]       ← workload VM arriving from VPN zone
+                dst:         <internet-dst>
+                sport:       ...                dport:     80
+
+        s2c flow:
+                source:      <internet-dst> [zone-internet]
+                dst:         <peer-public-ip>              ← SNAT applied (workload IP hidden)
+
+        total byte count(c2s)                : 479         ← traffic flowed c2s
+        total byte count(s2c)                : 852         ← traffic flowed s2c
+        layer7 packet count(c2s)             : 6
+        layer7 packet count(s2c)             : 4
+        application                          : web-browsing
+        rule                                 : azure-to-egress    ← correct security policy hit
+        address/port translation             : source
+        nat-rule                             : azure-egress-snat(vsys1)  ← SNAT rule hit
+        session traverses tunnel             : True
+        ingress interface                    : <tunnel-iface>      ← arriving via IPsec tunnel
+```
+
 ### 3. Azure Route Verification
 
 In the Azure portal, check effective routes on the workload VM NIC for each path:
