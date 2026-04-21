@@ -187,7 +187,49 @@ Configure a security rule covering both CNGFW instances using address-based matc
 
 Internet backhaul via forced tunneling is inherently intra-zone — traffic enters and exits the CNGFW on the same interface (firewall on a stick). While SCM has a default intra-zone allow, Cloud NGFW has a local default intra-zone **block** that is not logged. An explicit policy must be defined in SCM and pushed to the CNGFW — traffic will be silently dropped without it.
 
-### 2. BGP Session Verification (external PAN-OS peer — virtual-router/LRE)
+### 2. VPN Tunnel Verification (external PAN-OS peer — virtual-router/LRE)
+
+Confirm all three Azure IKEv2 SAs are `Established`:
+
+```
+show vpn ike-sa
+```
+
+```
+IKEv2 SAs
+Gateway ID  Peer-Address            Gateway Name      Role  Algorithm          Established      ST
+3           <vnet-vng-public-ip>    azure-vnet-vng    Init  PSK/DH2/A256/SHA1  Apr.21 06:34:05  Established
+4           <vwan-inst0-public-ip>  azure-vwan-inst0  Resp  PSK/DH2/A256/SHA1  Apr.21 06:34:15  Established
+8           <vwan-inst1-public-ip>  azure-vwan-inst1  Resp  PSK/DH2/A256/SHA1  Apr.21 06:34:11  Established
+```
+
+Confirm all three IPsec SAs are `Mature` with `ESP/A256/SHA256/DH14`:
+
+```
+show vpn ipsec-sa
+```
+
+```
+GwID/TnID  Peer-Address            Tunnel                        Algorithm             life(Sec)
+3/3        <vnet-vng-public-ip>    azure-vnet-vng(azure-vnet-vng)    ESP/A256/SHA256/DH14  3600/Unlimited
+4/4        <vwan-inst0-public-ip>  azure-vwan-inst0(azure-vwan-inst0) ESP/A256/SHA256/DH14  3600/Unlimited
+8/8        <vwan-inst1-public-ip>  azure-vwan-inst1(azure-vwan-inst1) ESP/A256/SHA256/DH14  3600/Unlimited
+```
+
+Confirm all three tunnel flows are `active`:
+
+```
+show vpn flow
+```
+
+```
+id  name              state   local-ip          peer-ip                 tunnel-i/f
+3   azure-vnet-vng    active  <peer-public-ip>  <vnet-vng-public-ip>    tunnel.100
+4   azure-vwan-inst0  active  <peer-public-ip>  <vwan-inst0-public-ip>  tunnel.101
+8   azure-vwan-inst1  active  <peer-public-ip>  <vwan-inst1-public-ip>  tunnel.102
+```
+
+### 3. BGP Session Verification (external PAN-OS peer — virtual-router/LRE)
 
 > The following CLI commands are run on the **external BGP peer device** (PAN-OS firewall with traditional virtual-router/LRE). The Cloud NGFW has no local CLI — its traffic logs are viewed in SCM.
 
@@ -291,7 +333,7 @@ Key fields to verify:
         ingress interface                    : <tunnel-iface>      ← arriving via IPsec tunnel
 ```
 
-### 3. Azure Route Verification
+### 4. Azure Route Verification
 
 **VNet workload VM effective routes** — should show `0.0.0.0/0` via `VirtualAppliance` at `10.128.1.4`:
 
@@ -330,7 +372,7 @@ az network nic show-effective-route-table \
   --output table
 ```
 
-### 4. End-to-End Egress Test
+### 5. End-to-End Egress Test
 
 SSH to each workload VM using its public IP (direct via `allowed_mgmt_cidrs` backdoor route):
 
