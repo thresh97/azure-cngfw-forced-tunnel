@@ -1,5 +1,7 @@
 # Azure Cloud NGFW — Forced Tunneling via S2S BGP
 
+> **Disclaimer:** Lab and demonstration use only. Not validated for production. No warranty expressed or implied. See full disclaimer below.
+
 Terraform deployment demonstrating forced internet tunneling through Palo Alto Networks Cloud NGFW (Strata Cloud Manager managed) via BGP-over-IPsec S2S VPN. Covers both the **Hub VNet** and **Virtual WAN** CNGFW deployment models in a single configuration. Both paths validated.
 
 > **Known gap:** Additional prefixes to private traffic range on both CNGFW instances and additional prefixes on the vWAN routing intent are not yet managed by Terraform in this deployment. Both CNGFW resources have `lifecycle { ignore_changes = all }` set. The additional private prefixes must be configured at initial deployment time — they cannot be added after the fact.
