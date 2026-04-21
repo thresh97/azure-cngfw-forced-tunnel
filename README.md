@@ -73,13 +73,15 @@ S2C (response): internet → on-prem → S2S tunnel → VPN GW → CNGFW private
 
 | Resource | CIDR |
 |---|---|
-| VNet Hub VNet | 10.128.0.0/16 |
-| VNet GatewaySubnet | 10.128.0.0/27 |
-| VNet CNGFW Trusted | 10.128.1.0/24 |
-| VNet CNGFW Untrusted | 10.128.2.0/24 |
-| VNet Workload VNet | 10.130.0.0/16 |
+| Hub VNet | 10.128.0.0/16 |
+| Hub VNet GatewaySubnet | 10.128.0.0/27 |
+| Hub VNet CNGFW Trusted | 10.128.1.0/24 |
+| Hub VNet CNGFW Untrusted | 10.128.2.0/24 |
+| Workload VNet | 10.130.0.0/16 |
+| Workload VNet Workload Subnet | 10.130.0.0/24 |
 | vWAN Hub | 10.129.0.0/23 |
 | vWAN Workload VNet | 10.131.0.0/16 |
+| vWAN Workload VNet Workload Subnet | 10.131.0.0/24 |
 
 ---
 
